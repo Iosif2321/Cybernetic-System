@@ -1,0 +1,11 @@
+name = "[FOD] Cybernetics System";
+picture = "PHEN_CS_icon_noBG_512.paa";
+actionName = "Discord";
+action = "https://discord.gg/KY9seJDnWK";
+logo = "PHEN_CS_icon_noBG_512.paa";
+logoOver = "PHEN_CS_icon_bg_512.paa";
+tooltip = "[FOD] Cybernetics System";
+tooltipOwned = "[FOD] Cybernetics System";
+overview = "A cybernetics implant system for eleven body systems. Augment your operator with ocular upgrades, skeletal reinforcement, movement overclocks, emergency medical implants and more. Everything is configurable, persistent, and stackable.";
+author = "Phenosi / 'The VII Legion: Imperial Fists' Developers";
+overviewPicture = "PHEN_CS_icon_noBG_512.paa";

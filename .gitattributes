@@ -1,0 +1,11 @@
+*.paa binary
+*.pbo binary
+*.bin binary
+*.ogg binary
+*.wav binary
+*.wss binary
+*.cpp text
+*.sqf text
+*.hpp text
+*.xml text
+*.md text

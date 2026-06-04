@@ -1,0 +1,9 @@
+_unpacked/
+_build_work*/
+_localized_pbo/
+*.tmp
+*.log
+*.rpt
+*.bak
+Thumbs.db
+desktop.ini
