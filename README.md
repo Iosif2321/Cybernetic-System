@@ -1,22 +1,22 @@
 # Cybernetic System
 
-Public repository for the Arma 3 `[FOD] Cybernetics System` mod package.
+Публичный репозиторий пакета мода Arma 3 `[FOD] Cybernetics System`.
 
-## Contents
+## Содержимое
 
-- `addons/PHEN_Cybernetics.pbo` - packed addon build.
-- `source/PHEN_Cybernetics/` - unpacked addon contents used for inspection and modification.
-- `mod.cpp`, `meta.cpp`, `PHEN_CS_icon_*.paa` - mod metadata and icons.
+- `addons/PHEN_Cybernetics.pbo` - собранный PBO аддон.
+- `source/PHEN_Cybernetics/` - распакованное содержимое аддона для проверки и правок.
+- `mod.cpp`, `meta.cpp`, `PHEN_CS_icon_*.paa` - метаданные мода и иконки.
 
-## Current Build Notes
+## Текущее состояние сборки
 
-This public package includes the localized CBA settings work and the Ripperdoc implant-list filter.
+В этот публичный пакет включены локализованные CBA-настройки и фильтр списка имплантов Ripperdoc.
 
-The Ripperdoc filter can be configured from the init field of the Ripperdoc module logic or from the synced Ripperdoc object.
+Фильтр Ripperdoc можно настраивать через init-поле логики модуля Ripperdoc или через init синхронизированного объекта Ripperdoc.
 
-The filter expects an array of strings. Use stable internal cybernetic IDs whenever possible. Current display names are also accepted, but IDs are safer because display names can be changed by settings.
+Фильтр ожидает массив строк. По возможности используйте стабильные внутренние ID киберимплантов. Текущие отображаемые названия тоже принимаются, но ID безопаснее, потому что отображаемые названия могут меняться настройками.
 
-Whitelist example:
+Пример whitelist:
 
 ```sqf
 this setVariable ["PHEN_CS_RipperdocAllowedList", [
@@ -25,7 +25,7 @@ this setVariable ["PHEN_CS_RipperdocAllowedList", [
 ], true];
 ```
 
-Blacklist example:
+Пример blacklist:
 
 ```sqf
 this setVariable ["PHEN_CS_RipperdocDeniedList", [
@@ -34,7 +34,7 @@ this setVariable ["PHEN_CS_RipperdocDeniedList", [
 ], true];
 ```
 
-Explicit mode example:
+Пример явного режима:
 
 ```sqf
 this setVariable ["PHEN_CS_RipperdocAccessMode", "whitelist", true];
@@ -44,11 +44,11 @@ this setVariable ["PHEN_CS_RipperdocAccessList", [
 ], true];
 ```
 
-`PHEN_CS_RipperdocAllowedList` enables whitelist behavior. `PHEN_CS_RipperdocDeniedList` enables blacklist behavior. If both are set, the denied list is applied last.
+`PHEN_CS_RipperdocAllowedList` включает режим whitelist. `PHEN_CS_RipperdocDeniedList` включает режим blacklist. Если заданы оба списка, denied list применяется последним.
 
-## Ripperdoc Whitelist And Blacklist Rules
+## Правила whitelist и blacklist для Ripperdoc
 
-Correct input format:
+Правильный формат входных данных:
 
 ```sqf
 [
@@ -57,7 +57,7 @@ Correct input format:
 ]
 ```
 
-Do not pass gear classnames, helmet arrays, or unquoted variable names unless those variables already contain valid cybernetic ID strings. For example, this is only valid if every `HOV_MK*_helmets` array contains strings matching cybernetic IDs or cybernetic display names:
+Не передавайте classnames экипировки, массивы шлемов или имена переменных без кавычек, если эти переменные уже не содержат валидные строки с ID киберимплантов. Например, этот вариант валиден только если каждый массив `HOV_MK*_helmets` содержит строки, совпадающие с ID киберимплантов или отображаемыми названиями киберимплантов:
 
 ```sqf
 private _allowedCybernetics =
@@ -69,9 +69,9 @@ private _allowedCybernetics =
 this setVariable ["PHEN_CS_RipperdocAllowedList", _allowedCybernetics, true];
 ```
 
-If those arrays contain helmet classnames, the Ripperdoc filter cannot match them to cybernetic implants. Use cybernetic IDs instead.
+Если эти массивы содержат classnames шлемов, фильтр Ripperdoc не сможет сопоставить их с киберимплантами. Используйте ID киберимплантов.
 
-Avoid putting a long `+` chain directly into a module init field while debugging. Build the list first, then assign it:
+Во время отладки не вставляйте длинную цепочку через `+` прямо в init-поле модуля. Сначала соберите список в переменную, затем назначьте его:
 
 ```sqf
 private _allowedCybernetics = [
@@ -82,11 +82,11 @@ private _allowedCybernetics = [
 this setVariable ["PHEN_CS_RipperdocAllowedList", _allowedCybernetics, true];
 ```
 
-If Arma reports `Error Missing ;` in a settings file, the whitelist script did not finish executing. In that case the Ripperdoc receives no whitelist and falls back to the full implant list.
+Если Arma показывает `Error Missing ;` в settings-файле, whitelist-скрипт не завершил выполнение. В этом случае Ripperdoc не получает whitelist и возвращается к полному списку имплантов.
 
-## Module Init Versus Object Init
+## Init модуля и init объекта
 
-Preferred module init:
+Предпочтительный вариант через init модуля:
 
 ```sqf
 this setVariable ["PHEN_CS_RipperdocAllowedList", [
@@ -95,7 +95,7 @@ this setVariable ["PHEN_CS_RipperdocAllowedList", [
 ], true];
 ```
 
-Object init on the synced Ripperdoc object also works:
+Init на синхронизированном объекте Ripperdoc тоже работает:
 
 ```sqf
 this setVariable ["PHEN_CS_RipperdocDeniedList", [
@@ -103,12 +103,12 @@ this setVariable ["PHEN_CS_RipperdocDeniedList", [
 ], true];
 ```
 
-The module copies its filter settings onto the synced Ripperdoc object when the module initializes, then client-side Ripperdoc actions read the filter from that object.
+При инициализации модуль копирует свои настройки фильтра на синхронизированный объект Ripperdoc. После этого клиентские действия Ripperdoc читают фильтр с этого объекта.
 
-## Signing
+## Подпись
 
-The included PBO build is not accompanied by a valid updated `.bisign` file in this repository. The original PHEN private signing key is not present in the available project files.
+В репозитории нет валидного обновленного `.bisign` файла для включенного PBO. Оригинальный приватный ключ подписи PHEN отсутствует в доступных файлах проекта.
 
-## Source Notes
+## Примечания по исходникам
 
-The `source/PHEN_Cybernetics/` tree is an unpacked addon tree. Generated `config.cpp` files are intentionally not included in this publication copy.
+Дерево `source/PHEN_Cybernetics/` - это распакованное дерево аддона. Сгенерированные файлы `config.cpp` намеренно не включены в опубликованную копию.
