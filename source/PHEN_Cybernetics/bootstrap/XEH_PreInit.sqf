@@ -2799,29 +2799,49 @@ PHEN_CS_fnc_AddTerminalActions = {
         ["_ImplantAction", true],
         ["_RemoveAction", true],
         ["_accessMode", "all"],
-        ["_accessList", []]
+        ["_accessList", []],
+        ["_allowedList", []],
+        ["_deniedList", []]
     ];
 
     if !(isNull _object) then {
         _accessMode = _object getVariable ["PHEN_CS_RipperdocAccessMode", _accessMode];
         _accessList = _object getVariable ["PHEN_CS_RipperdocAccessList", _accessList];
+        _allowedList = _object getVariable ["PHEN_CS_RipperdocAllowedList", _allowedList];
+        _deniedList = _object getVariable ["PHEN_CS_RipperdocDeniedList", _deniedList];
+
+        if !(_allowedList isEqualTo []) then {
+            _accessMode = "whitelist";
+            _accessList = _allowedList;
+        };
+
+        if !(_deniedList isEqualTo []) then {
+            _accessMode = "blacklist";
+            _accessList = _deniedList;
+        };
 
         _object setVariable ["PHEN_CS_RipperdocAccessMode", _accessMode, true];
         _object setVariable ["PHEN_CS_RipperdocAccessList", _accessList, true];
+        _object setVariable ["PHEN_CS_RipperdocAllowedList", _allowedList, true];
+        _object setVariable ["PHEN_CS_RipperdocDeniedList", _deniedList, true];
     };
 
-    [[_object, _ImplantAction, _RemoveAction, _accessMode, _accessList], {
+    [[_object, _ImplantAction, _RemoveAction, _accessMode, _accessList, _allowedList, _deniedList], {
         params [
             ["_object", objNull],
             ["_ImplantAction", true],
             ["_RemoveAction", true],
             ["_accessMode", "all"],
-            ["_accessList", []]
+            ["_accessList", []],
+            ["_allowedList", []],
+            ["_deniedList", []]
         ];
 
         if !(isNull _object) then {
             _object setVariable ["PHEN_CS_RipperdocAccessMode", _accessMode, false];
             _object setVariable ["PHEN_CS_RipperdocAccessList", _accessList, false];
+            _object setVariable ["PHEN_CS_RipperdocAllowedList", _allowedList, false];
+            _object setVariable ["PHEN_CS_RipperdocDeniedList", _deniedList, false];
         };
 
         // helper to get a valid empty-structured save array

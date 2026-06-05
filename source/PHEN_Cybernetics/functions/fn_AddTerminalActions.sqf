@@ -43,7 +43,7 @@ switch (_mode) do {
 			_obj setVariable ["PHEN_CS_RipperdocDeniedList", _deniedList, true];
 
 			// Call function
-			[_obj, true, true, _accessMode, _accessList] call PHEN_CS_fnc_AddTerminalActions;
+			[_obj, true, true, _accessMode, _accessList, _allowedList, _deniedList] call PHEN_CS_fnc_AddTerminalActions;
 		} else {
 			diag_log "[PHEN_CyberneticsSystem] WARNING: No objects synced to the module.";
 		};
