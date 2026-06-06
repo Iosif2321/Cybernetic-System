@@ -2,6 +2,7 @@
 #include "\a3\ui_f\hpp\defineDIKCodes.inc"
 
 #define PHEN_CS_L(KEY) (localize KEY)
+#define PHEN_CS_KEYBIND_CAT_HUD "[FOD] Cybernetics System - HUD"
 
 PHEN_CS_HasACEMedical = isClass (configFile >> "CfgPatches" >> "ace_medical");
 PHEN_CS_HasKAT = isClass (configFile >> "CfgPatches" >> "kat_main");
@@ -15,7 +16,7 @@ PHEN_CS_HasKAT = isClass (configFile >> "CfgPatches" >> "kat_main");
 /*
     KEYBINDS
 */
-[PHEN_CS_L("STR_PHEN_CS_CBA_CAT_HUD"), "CheckCyberneticsOther", [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_OTHER"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_OTHER_TT")], {
+[PHEN_CS_KEYBIND_CAT_HUD, "CheckCyberneticsOther", [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_OTHER"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_OTHER_TT")], {
 
     _player = missionnamespace getVariable ["bis_fnc_moduleremoteControl_unit", player];
     if (_player getVariable ["PHEN_CS_Keybind_KeyPressed", false]) exitWith {};
@@ -33,7 +34,7 @@ PHEN_CS_HasKAT = isClass (configFile >> "CfgPatches" >> "kat_main");
     
 }, {}, [DIK_U, [false, true, false]]] call cba_fnc_addKeybind;
 
-[PHEN_CS_L("STR_PHEN_CS_CBA_CAT_HUD"), "CheckCyberneticsSelf", [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_SELF"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_SELF_TT")], {
+[PHEN_CS_KEYBIND_CAT_HUD, "CheckCyberneticsSelf", [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_SELF"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CHECK_SELF_TT")], {
 
     _player = missionnamespace getVariable ["bis_fnc_moduleremoteControl_unit", player];
     if (_player getVariable ["PHEN_CS_Keybind_KeyPressed", false]) exitWith {};

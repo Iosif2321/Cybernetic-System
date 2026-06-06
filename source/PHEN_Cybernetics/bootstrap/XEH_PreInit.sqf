@@ -1,4 +1,6 @@
 #define PHEN_CS_L(KEY) (localize KEY)
+#define PHEN_CS_KEYBIND_CAT_MOVEMENT "[FOD] Cybernetics System - Movement"
+#define PHEN_CS_KEYBIND_CAT_TACHUD "[FOD] Cybernetics System - Tactical HUD"
 
 /*
 EXAMPLE OF *FULL* DATA ARRAY STRUCTURE:
@@ -3124,7 +3126,7 @@ PHEN_CS_fnc_applySmoothImpulse_local = {
 
 // CBA keybind Jump
 [
-    PHEN_CS_L("STR_PHEN_CS_CBA_CAT_MOVEMENT"),             // Category
+    PHEN_CS_KEYBIND_CAT_MOVEMENT,                       // Stable CBA keybind registry category
     "PHEN_CS_JumpKey",                                 // Unique action ID
     [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CYBER_JUMP"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CYBER_JUMP_TT")], // [name, tooltip]
 
@@ -3223,7 +3225,7 @@ PHEN_CS_fnc_doJump = {
 
 // CBA keybind Dash / AirDash - single unified bind so only one fires per press
 [
-    PHEN_CS_L("STR_PHEN_CS_CBA_CAT_MOVEMENT"),
+    PHEN_CS_KEYBIND_CAT_MOVEMENT,
     "PHEN_CS_Dash_Key",
     [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_DASH"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_DASH_TT")],
     {
@@ -3955,7 +3957,7 @@ PHEN_CS_fnc_TacHUD_toggle = {
 };
 
 [
-    PHEN_CS_L("STR_PHEN_CS_CBA_CAT_TACHUD"),
+    PHEN_CS_KEYBIND_CAT_TACHUD,
     "PHEN_CS_TacHUD_ToggleKey",
     [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_TACHUD_TOGGLE"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_TACHUD_TOGGLE_TT")],
     {
