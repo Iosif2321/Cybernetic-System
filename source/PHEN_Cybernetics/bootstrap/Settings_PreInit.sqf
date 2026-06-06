@@ -1851,6 +1851,59 @@ PHEN_CS_HasKAT = isClass (configFile >> "CfgPatches" >> "kat_main");
     }
 ] call CBA_fnc_addSetting;
 
+[
+    "PHEN_CS_Cybernetic_OCULAR_ITEM_3_Name",
+    "EDITBOX",
+    PHEN_CS_L("STR_PHEN_CS_CBA_FIELD_NAME"),
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_CYBERWARE"),PHEN_CS_L("STR_PHEN_CS_CBA_SUB_OCULAR_4")],
+    "Argus Combat Optics Mk.IV",
+    1,
+    {
+        params ["_value"];
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_Name = _value;
+        call PHEN_CS_fnc_GenerateMasterList; // generate/updates master list
+    }
+] call CBA_fnc_addSetting;
+[
+    "PHEN_CS_Cybernetic_OCULAR_ITEM_3_PicturePath",
+    "EDITBOX",
+    PHEN_CS_L("STR_PHEN_CS_CBA_FIELD_PICTURE_PATH"),
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_CYBERWARE"),PHEN_CS_L("STR_PHEN_CS_CBA_SUB_OCULAR_4")],
+    "PHEN_Cybernetics\Data\ocular_3_ca.paa",
+    1,
+    {
+        params ["_value"];
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_PicturePath = _value;
+        call PHEN_CS_fnc_GenerateMasterList; // generate/updates master list
+    }
+] call CBA_fnc_addSetting;
+[
+    "PHEN_CS_Cybernetic_OCULAR_ITEM_3_Tooltip",
+    "EDITBOX",
+    PHEN_CS_L("STR_PHEN_CS_CBA_FIELD_TOOLTIP"),
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_CYBERWARE"),PHEN_CS_L("STR_PHEN_CS_CBA_SUB_OCULAR_4")],
+    "Argus Combat Optics Mk.IV: Combat sensor suite with mine recognition, allied unit tracking, medical telemetry, shot-impact marking, integrated binoculars, night vision, and thermal imaging.",
+    1,
+    {
+        params ["_value"];
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_Tooltip = _value;
+        call PHEN_CS_fnc_GenerateMasterList; // generate/updates master list
+    }
+] call CBA_fnc_addSetting;
+[
+    "PHEN_CS_Cybernetic_OCULAR_ITEM_3_Effects",
+    "EDITBOX",
+    PHEN_CS_L("STR_PHEN_CS_CBA_FIELD_EFFECTS_ARRAY"),
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_CYBERWARE"),PHEN_CS_L("STR_PHEN_CS_CBA_SUB_OCULAR_4")],
+    (str [["nightANDThermalVision", 1], ["tacHUD", true], ["combatSensorSuite", true], ["stressPenalty", 10]]),
+    1,
+    {
+        params ["_value"];
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_Effects = parseSimpleArray _value;
+        call PHEN_CS_fnc_GenerateMasterList; // generate/updates master list
+    }
+] call CBA_fnc_addSetting;
+
 // --- OPERATING SYSTEM ---
 [
     "PHEN_CS_Cybernetic_OPERATINGSYSTEM_ITEM_0_Name",

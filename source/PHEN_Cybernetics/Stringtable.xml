@@ -53,6 +53,7 @@
         <Key ID="STR_PHEN_CS_CBA_SUB_OCULAR_1"><Original>OCULAR [1/3]</Original><English>OCULAR [1/3]</English><Russian>Зрение [1/3]</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_SUB_OCULAR_2"><Original>OCULAR [2/3]</Original><English>OCULAR [2/3]</English><Russian>Зрение [2/3]</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_SUB_OCULAR_3"><Original>OCULAR [3/3]</Original><English>OCULAR [3/3]</English><Russian>Зрение [3/3]</Russian></Key>
+        <Key ID="STR_PHEN_CS_CBA_SUB_OCULAR_4"><Original>OCULAR [4/4]</Original><English>OCULAR [4/4]</English><Russian>Зрение [4/4]</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_SUB_OPERATING_SYSTEM_1"><Original>OPERATING SYSTEM [1/3]</Original><English>OPERATING SYSTEM [1/3]</English><Russian>Операционная система [1/3]</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_SUB_OPERATING_SYSTEM_2"><Original>OPERATING SYSTEM [2/3]</Original><English>OPERATING SYSTEM [2/3]</English><Russian>Операционная система [2/3]</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_SUB_OPERATING_SYSTEM_3"><Original>OPERATING SYSTEM [3/3]</Original><English>OPERATING SYSTEM [3/3]</English><Russian>Операционная система [3/3]</Russian></Key>
@@ -75,6 +76,8 @@
         <Key ID="STR_PHEN_CS_CBA_KEY_DASH_TT"><Original>Ground: dash burst. Air: air-dash burst. (Should be IMS 'dodge' Key!)</Original><English>Ground: dash burst. Air: air-dash burst. (Should be IMS 'dodge' Key!)</English><Russian>На земле: рывок. В воздухе: воздушный рывок. Рекомендуется клавиша IMS dodge.</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_KEY_TACHUD_TOGGLE"><Original>Toggle TacHUD</Original><English>Toggle TacHUD</English><Russian>Переключить TacHUD</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_KEY_TACHUD_TOGGLE_TT"><Original>Manually show or hide the Tactical HUD overlay. Requires TacHUD ocular cybernetics.</Original><English>Manually show or hide the Tactical HUD overlay. Requires TacHUD ocular cybernetics.</English><Russian>Вручную показать или скрыть тактический HUD. Требуется глазной киберимплант TacHUD.</Russian></Key>
+        <Key ID="STR_PHEN_CS_CBA_KEY_CSS_ZOOM"><Original>Cycle Ocular Zoom</Original><English>Cycle Ocular Zoom</English><Russian>Переключить увеличение глазного импланта</Russian></Key>
+        <Key ID="STR_PHEN_CS_CBA_KEY_CSS_ZOOM_TT"><Original>Cycles the integrated Argus optical zoom mode. Requires Argus Combat Optics Mk.IV.</Original><English>Cycles the integrated Argus optical zoom mode. Requires Argus Combat Optics Mk.IV.</English><Russian>Переключает встроенный режим оптического увеличения Argus. Требуется Argus Combat Optics Mk.IV.</Russian></Key>
 
         <Key ID="STR_PHEN_CS_CBA_HUD_IMAGE"><Original>HUD Image</Original><English>HUD Image</English><Russian>Изображение HUD</Russian></Key>
         <Key ID="STR_PHEN_CS_CBA_HUD_IMAGE_TT"><Original>Path to the background image displayed in the Cybernetics HUD.</Original><English>Path to the background image displayed in the Cybernetics HUD.</English><Russian>Путь к фоновому изображению, отображаемому в HUD киберимплантов.</Russian></Key>

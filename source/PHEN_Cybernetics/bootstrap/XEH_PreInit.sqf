@@ -387,8 +387,8 @@ PHEN_CYBERWARE_MAP = [
 PHEN_CS_Cybernetic_ItemCategoryMap = [
     // FRONTAL CORTEX (3)
     0,0,0,
-    // OCULAR (3)
-    1,1,1,
+    // OCULAR (4)
+    1,1,1,1,
     // CIRCULATORY (3)
     2,2,2,
     // IMMUNE (3)
@@ -904,6 +904,7 @@ PHEN_CS_fnc_CyberWareHandler = {
     _Abillity_Dash = false;
     _bioMedicaStim = false;
     _Abillity_TacHUD = false;
+    _Abillity_CombatSensorSuite = false;
 
     // Loop over all categories
     {
@@ -944,6 +945,10 @@ PHEN_CS_fnc_CyberWareHandler = {
                     };
                     case (_effectName isEqualTo "nightANDThermalVision"): {
                         _nvgToGive = "PHEN_CS_LowLightOptics_MkIII";
+                    };
+                    case (_effectName isEqualTo "combatSensorSuite"): {
+                        _Abillity_CombatSensorSuite = _effectValue;
+                        if (_effectValue) then { _nvgToGive = "PHEN_CS_LowLightOptics_MkIV"; };
                     };
                     case (_effectName isEqualTo "setStaminaScheme_Default"): {
                         _StaminaScheme = "Default";
@@ -1018,7 +1023,8 @@ PHEN_CS_fnc_CyberWareHandler = {
     private _allCyberNVGs = [
         "PHEN_CS_LowLightOptics_MkI",
         "PHEN_CS_LowLightOptics_MkII",
-        "PHEN_CS_LowLightOptics_MkIII"
+        "PHEN_CS_LowLightOptics_MkIII",
+        "PHEN_CS_LowLightOptics_MkIV"
     ];
 
     // If some bug set a nonsense NVG, nuke it.
@@ -1121,6 +1127,9 @@ PHEN_CS_fnc_CyberWareHandler = {
         if (!_Abillity_TacHUD && { hasInterface } && { _unit isEqualTo player }) then {
             call PHEN_CS_fnc_TacHUD_hide;
         };
+    };
+    if (_Abillity_CombatSensorSuite != (_unit getVariable ["PHEN_CS_Abillity_CombatSensorSuite", false])) then {
+        _unit setVariable ["PHEN_CS_Abillity_CombatSensorSuite", _Abillity_CombatSensorSuite, true];
     };
     if (_damageResist != (_unit getVariable ['PHEN_CS_damageResistModifier', 0])) then { _unit setVariable ['PHEN_CS_damageResistModifier', _damageResist, true]; };
 
@@ -2255,6 +2264,13 @@ PHEN_CS_fnc_GenerateMasterList = {
         PHEN_CS_Cybernetic_OCULAR_ITEM_2_Effects
     ];
 
+    PHEN_CS_Cybernetic_OCULAR_ITEM_3 = [
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_Name,
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_PicturePath,
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_Tooltip,
+        PHEN_CS_Cybernetic_OCULAR_ITEM_3_Effects
+    ];
+
     PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0 = [
         PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0_Name,
         PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0_PicturePath,
@@ -2474,6 +2490,7 @@ PHEN_CS_fnc_GenerateMasterList = {
             PHEN_CS_Cybernetic_OCULAR_ITEM_0,
             PHEN_CS_Cybernetic_OCULAR_ITEM_1,
             PHEN_CS_Cybernetic_OCULAR_ITEM_2,
+            PHEN_CS_Cybernetic_OCULAR_ITEM_3,
 
             PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0,
             PHEN_CS_Cybernetic_CIRCULATORY_ITEM_1,
@@ -2529,6 +2546,7 @@ PHEN_CS_fnc_GenerateMasterList = {
             [PHEN_CS_Cybernetic_OCULAR_ITEM_0#0, PHEN_CS_Cybernetic_OCULAR_ITEM_0#2, PHEN_CS_Cybernetic_OCULAR_ITEM_0#1, [255,255,255,255]],
             [PHEN_CS_Cybernetic_OCULAR_ITEM_1#0, PHEN_CS_Cybernetic_OCULAR_ITEM_1#2, PHEN_CS_Cybernetic_OCULAR_ITEM_1#1, [255,255,255,255]],
             [PHEN_CS_Cybernetic_OCULAR_ITEM_2#0, PHEN_CS_Cybernetic_OCULAR_ITEM_2#2, PHEN_CS_Cybernetic_OCULAR_ITEM_2#1, [255,255,255,255]],
+            [PHEN_CS_Cybernetic_OCULAR_ITEM_3#0, PHEN_CS_Cybernetic_OCULAR_ITEM_3#2, PHEN_CS_Cybernetic_OCULAR_ITEM_3#1, [255,255,255,255]],
 
             // CIRCULATORY
             [PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0#0, PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0#2, PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0#1, [255,255,255,255]],
@@ -2593,6 +2611,7 @@ PHEN_CS_fnc_GenerateMasterList = {
         "PHEN_CS_Cybernetic_OCULAR_ITEM_0",
         "PHEN_CS_Cybernetic_OCULAR_ITEM_1",
         "PHEN_CS_Cybernetic_OCULAR_ITEM_2",
+        "PHEN_CS_Cybernetic_OCULAR_ITEM_3",
         "PHEN_CS_Cybernetic_CIRCULATORY_ITEM_0",
         "PHEN_CS_Cybernetic_CIRCULATORY_ITEM_1",
         "PHEN_CS_Cybernetic_CIRCULATORY_ITEM_2",
@@ -3973,6 +3992,35 @@ PHEN_CS_fnc_TacHUD_toggle = {
             uiNamespace setVariable ["PHEN_CS_TacHUD_ADSSuppressed", false];
             call PHEN_CS_fnc_TacHUD_show;
         };
+    },
+    {},
+    [0, [false, false, false]]
+] call CBA_fnc_addKeybind;
+
+[
+    PHEN_CS_KEYBIND_CAT_TACHUD,
+    "PHEN_CS_CombatSensorZoomKey",
+    [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM_TT")],
+    {
+        if (!(isNull findDisplay 49) || !(isNull findDisplay 312) || visibleMap) exitWith { false };
+        private _unit = missionNamespace getVariable ["bis_fnc_moduleRemoteControl_unit", player];
+        if !(_unit getVariable ["PHEN_CS_Abillity_CombatSensorSuite", false]) exitWith { false };
+
+        private _levels = [1, 2, 4, 8];
+        private _index = (missionNamespace getVariable ["PHEN_CS_CSS_ZoomIndex", 0]) + 1;
+        if (_index >= count _levels) then { _index = 0; };
+        missionNamespace setVariable ["PHEN_CS_CSS_ZoomIndex", _index];
+
+        if ("PHEN_CS_ArgusIntegratedBinocular" in weapons player) then {
+            player selectWeapon "PHEN_CS_ArgusIntegratedBinocular";
+        };
+
+        hintSilent parseText format [
+            "<t color='#66ccff'>ARGUS OPTICS</t><br/><t size='1.2'>Zoom x%1</t>",
+            _levels # _index
+        ];
+
+        false
     },
     {},
     [0, [false, false, false]]
