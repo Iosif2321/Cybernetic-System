@@ -11,8 +11,7 @@ class CfgPatches
 			"PHEN_CS_LowLightOptics_MkI",
 			"PHEN_CS_LowLightOptics_MkII",
 			"PHEN_CS_LowLightOptics_MkIII",
-			"PHEN_CS_LowLightOptics_MkIV",
-			"PHEN_CS_ArgusIntegratedBinocular"
+			"PHEN_CS_LowLightOptics_MkIV"
 		};
 		requiredVersion="0.0.1";
 		version="0.0.5";
@@ -842,7 +841,6 @@ class CfgVehicles
 class CfgWeapons
 {
 	class NVGoggles;
-	class Binocular;
 	class PHEN_CS_LowLightOptics_MkI: NVGoggles
 	{
 		scope=1;
@@ -901,59 +899,12 @@ class CfgWeapons
 		icon="\PHEN_Cybernetics\Data\ocular_3_ca.paa";
 		displayName="Argus Combat Optics Mk.IV";
 		descriptionShort="Cybernetic ocular implant. Grants combat sensor suite, night vision, and thermal imaging.";
-		descriptionUse="Integrated Argus combat ocular array with mine recognition, allied-unit tracking, medical telemetry, shot-impact marking, binocular optics, night vision, and thermal imaging. Requires implantation by a licensed Ripperdoc.";
+		descriptionUse="Integrated Argus combat ocular array with view-gated mine recognition, allied-unit tracking, medical telemetry, approximate pre-fire aim prediction, radar scale control, night vision, and thermal imaging. Requires implantation by a licensed Ripperdoc.";
 		visionMode[]=
 		{
 			"Normal",
 			"NVG",
 			"TI"
-		};
-	};
-	class PHEN_CS_ArgusIntegratedBinocular: Binocular
-	{
-		scope=1;
-		author="Phenosi";
-		displayName="Argus Integrated Binocular";
-		descriptionShort="Integrated binocular optics provided by Argus Combat Optics Mk.IV.";
-		picture="\PHEN_Cybernetics\Data\ocular_3_ca.paa";
-		modelOptics="\A3\Weapons_F\Reticle\optics_binoculars";
-		visionMode[]=
-		{
-			"Normal",
-			"NVG",
-			"TI"
-		};
-		thermalMode[]={0,1};
-		opticsZoomMin=0.03125;
-		opticsZoomMax=0.25;
-		opticsZoomInit=0.25;
-		class OpticsModes
-		{
-			class ArgusStepZoom
-			{
-				opticsID=1;
-				useModelOptics=1;
-				opticsPPEffects[]=
-				{
-					"OpticsCHAbera1",
-					"OpticsBlur1"
-				};
-				opticsZoomMin=0.03125;
-				opticsZoomMax=0.25;
-				opticsZoomInit=0.25;
-				discretefov[]={0.25,0.125,0.0625,0.03125};
-				discreteInitIndex=0;
-				distanceZoomMin=100;
-				distanceZoomMax=100;
-				memoryPointCamera="eye";
-				visionMode[]=
-				{
-					"Normal",
-					"NVG",
-					"TI"
-				};
-				thermalMode[]={0,1};
-			};
 		};
 	};
 };

@@ -4000,23 +4000,19 @@ PHEN_CS_fnc_TacHUD_toggle = {
 [
     PHEN_CS_KEYBIND_CAT_TACHUD,
     "PHEN_CS_CombatSensorZoomKey",
-    [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM_TT")],
+    [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_RADAR_SCALE"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_RADAR_SCALE_TT")],
     {
         if (!(isNull findDisplay 49) || !(isNull findDisplay 312) || visibleMap) exitWith { false };
         private _unit = missionNamespace getVariable ["bis_fnc_moduleRemoteControl_unit", player];
         if !(_unit getVariable ["PHEN_CS_Abillity_CombatSensorSuite", false]) exitWith { false };
 
-        private _levels = [1, 2, 4, 8];
-        private _index = (missionNamespace getVariable ["PHEN_CS_CSS_ZoomIndex", 0]) + 1;
+        private _levels = missionNamespace getVariable ["PHEN_CS_CSS_RadarScaleLevels", [250,500,1000,2000]];
+        private _index = (missionNamespace getVariable ["PHEN_CS_CSS_RadarScaleIndex", 2]) + 1;
         if (_index >= count _levels) then { _index = 0; };
-        missionNamespace setVariable ["PHEN_CS_CSS_ZoomIndex", _index];
-
-        if ("PHEN_CS_ArgusIntegratedBinocular" in weapons player) then {
-            player selectWeapon "PHEN_CS_ArgusIntegratedBinocular";
-        };
+        missionNamespace setVariable ["PHEN_CS_CSS_RadarScaleIndex", _index];
 
         hintSilent parseText format [
-            "<t color='#66ccff'>ARGUS OPTICS</t><br/><t size='1.2'>Zoom x%1</t>",
+            "<t color='#66ccff'>ARGUS RADAR</t><br/><t size='1.2'>Scale %1m</t>",
             _levels # _index
         ];
 
