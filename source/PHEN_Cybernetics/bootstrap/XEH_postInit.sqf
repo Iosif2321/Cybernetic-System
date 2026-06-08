@@ -6,15 +6,17 @@ PHEN_CS_CSS_CloseRadius = 10;
 PHEN_CS_CSS_NearFOVRange = 100;
 PHEN_CS_CSS_NearFOVDegrees = 110;
 PHEN_CS_CSS_NearFOVDot = cos (PHEN_CS_CSS_NearFOVDegrees / 2);
+PHEN_CS_CSS_FarFOVDegrees = 90;
+PHEN_CS_CSS_FarFOVDot = cos (PHEN_CS_CSS_FarFOVDegrees / 2);
 PHEN_CS_CSS_RadarScaleLevels = [250,500,1000,2000];
-PHEN_CS_CSS_ZoomLevels = [1,2,4];
+PHEN_CS_CSS_MinAimSolutionDistance = 15;
 PHEN_CS_CSS_MaxRadarContacts = 32;
 PHEN_CS_CSS_AimSolution = [];
 PHEN_CS_CSS_FriendContacts = [];
 PHEN_CS_CSS_MineContacts = [];
 PHEN_CS_CSS_RadarContacts = [];
 PHEN_CS_CSS_FocusActive = false;
-PHEN_CS_CSS_ZoomActive = false;
+PHEN_CS_CSS_FocusKeyNames = [];
 
 PHEN_CS_fnc_CSS_getUnit = {
     private _unit = missionNamespace getVariable ["bis_fnc_moduleRemoteControl_unit", player];
@@ -29,16 +31,17 @@ PHEN_CS_fnc_CSS_hasSuite = {
 
 PHEN_CS_fnc_CSS_getHudLayout = {
     private _hudScale = ((missionNamespace getVariable ["PHEN_CS_CSS_HudScale", 1]) max 0.5) min 2;
-    private _panelW = 0.22 * _hudScale;
-    private _panelH = 0.235 * _hudScale;
+    private _textScale = 0.88 + ((_hudScale - 1) * 0.12);
+    private _panelW = (0.22 * _hudScale) min 0.34;
+    private _panelH = (0.235 * _hudScale) min 0.36;
     private _panelX = safeZoneX + safeZoneW - (0.015 + _panelW);
     private _panelY = safeZoneY + safeZoneH - (0.06 + _panelH);
-    private _centerX = _panelX + (0.11 * _hudScale);
-    private _centerY = _panelY + (0.148 * _hudScale);
-    private _radius = 0.095 * _hudScale;
-    private _dotBase = 0.004 * _hudScale;
-    private _noseOffset = 0.008 * _hudScale;
-    [_hudScale, _panelX, _panelY, _panelW, _panelH, _centerX, _centerY, _radius, _dotBase, _noseOffset]
+    private _centerX = _panelX + (_panelW * 0.5);
+    private _centerY = _panelY + (_panelH * 0.63);
+    private _radius = (_panelW min _panelH) * 0.38;
+    private _dotBase = 0.011 * ((_hudScale max 0.75) min 1.45);
+    private _noseOffset = 0.012 * ((_hudScale max 0.75) min 1.45);
+    [_hudScale, _panelX, _panelY, _panelW, _panelH, _centerX, _centerY, _radius, _dotBase, _noseOffset, _textScale]
 };
 
 PHEN_CS_fnc_CSS_isFriendly = {
@@ -95,6 +98,16 @@ PHEN_CS_fnc_CSS_getMarkerPosASL = {
     AGLToASL (_object modelToWorldVisual [0,0,_offsetZ])
 };
 
+PHEN_CS_fnc_CSS_getViewDirection = {
+    params ["_unit"];
+
+    private _dir = vectorNormalized (eyeDirection _unit);
+    if ((vectorMagnitude _dir) <= 0.001) then { _dir = vectorNormalized (vectorDirVisual _unit); };
+    if ((vectorMagnitude _dir) <= 0.001) then { _dir = [0,1,0]; };
+
+    _dir
+};
+
 PHEN_CS_fnc_CSS_isMarkerVisible = {
     params ["_unit", "_object", "_targetASL", ["_range", PHEN_CS_CSS_AllyRange]];
 
@@ -104,19 +117,17 @@ PHEN_CS_fnc_CSS_isMarkerVisible = {
     if (_distance > _range) exitWith { false };
     if (_distance <= PHEN_CS_CSS_CloseRadius) exitWith { true };
 
-    private _cameraASL = AGLToASL (positionCameraToWorld [0,0,0]);
-    private _cameraForwardASL = AGLToASL (positionCameraToWorld [0,0,1]);
-    private _cameraDir = vectorNormalized (_cameraForwardASL vectorDiff _cameraASL);
-    if ((vectorMagnitude _cameraDir) <= 0.001) then { _cameraDir = vectorNormalized (getCameraViewDirection player); };
-    private _toTarget = _targetASL vectorDiff _cameraASL;
+    private _viewOriginASL = eyePos _unit;
+    private _viewDir = [_unit] call PHEN_CS_fnc_CSS_getViewDirection;
+    private _toTarget = _targetASL vectorDiff _viewOriginASL;
     if ((vectorMagnitude _toTarget) <= 0.1) exitWith { false };
 
-    private _forwardDot = _cameraDir vectorDotProduct (vectorNormalized _toTarget);
+    private _forwardDot = _viewDir vectorDotProduct (vectorNormalized _toTarget);
     if (_forwardDot <= 0) exitWith { false };
     if (_distance <= PHEN_CS_CSS_NearFOVRange && { _forwardDot < PHEN_CS_CSS_NearFOVDot }) exitWith { false };
 
     if (_distance > PHEN_CS_CSS_NearFOVRange) then {
-        if (_forwardDot < 0.35) exitWith { false };
+        if (_forwardDot < PHEN_CS_CSS_FarFOVDot) exitWith { false };
         private _screen = worldToScreen (ASLToAGL _targetASL);
         if (_screen isEqualTo []) exitWith { false };
         _screen params ["_screenX", "_screenY"];
@@ -124,7 +135,7 @@ PHEN_CS_fnc_CSS_isMarkerVisible = {
         if (_screenX < _edge || { _screenX > (1 - _edge) } || { _screenY < _edge } || { _screenY > (1 - _edge) }) exitWith { false };
     };
 
-    private _visibility = [_unit, "VIEW", _object] checkVisibility [_cameraASL, _targetASL];
+    private _visibility = [_unit, "VIEW", _object] checkVisibility [_viewOriginASL, _targetASL];
     _visibility > 0.18
 };
 
@@ -135,11 +146,11 @@ PHEN_CS_fnc_CSS_isAimVisible = {
     if ((count _targetASL) < 3) exitWith { false };
     if ((getPosASL _unit distance _targetASL) > _range) exitWith { false };
 
-    private _cameraASL = AGLToASL (positionCameraToWorld [0,0,0]);
-    private _cameraDir = vectorNormalized (getCameraViewDirection player);
-    private _toTarget = _targetASL vectorDiff _cameraASL;
+    private _viewOriginASL = eyePos _unit;
+    private _viewDir = [_unit] call PHEN_CS_fnc_CSS_getViewDirection;
+    private _toTarget = _targetASL vectorDiff _viewOriginASL;
     if ((vectorMagnitude _toTarget) <= 0.1) exitWith { false };
-    if ((_cameraDir vectorDotProduct (vectorNormalized _toTarget)) <= 0) exitWith { false };
+    if ((_viewDir vectorDotProduct (vectorNormalized _toTarget)) <= 0) exitWith { false };
 
     private _screen = worldToScreen (ASLToAGL _targetASL);
     if (_screen isEqualTo []) exitWith { false };
@@ -176,7 +187,7 @@ PHEN_CS_fnc_CSS_getDisplayName = {
 PHEN_CS_fnc_CSS_classifyContact = {
     params ["_object", ["_isMine", false]];
 
-    private _icon = "\a3\ui_f\data\map\markers\military\dot_ca.paa";
+    private _icon = "\a3\ui_f\data\map\markers\nato\b_unknown.paa";
     if (_isMine) exitWith { ["MINE", _icon, [1,0.16,0.08,0.95], 0.75] };
     if (isNull _object) exitWith { ["OBJ", _icon, [0.7,0.8,0.9,0.8], 0.6] };
 
@@ -184,18 +195,18 @@ PHEN_CS_fnc_CSS_classifyContact = {
     private _vehicleClass = getText (configFile >> "CfgVehicles" >> typeOf _object >> "vehicleClass");
     private _typeInfo = toLower (format ["%1 %2 %3", typeOf _object, _displayName, _vehicleClass]);
 
-    if (_object isKindOf "CAManBase") exitWith { ["INF", _icon, [0.15,0.95,0.75,0.9], 0.78] };
-    if (unitIsUAV _object) exitWith { ["UAV", _icon, [0.45,0.85,1,0.88], 0.72] };
-    if (_object isKindOf "Air") exitWith { ["AIR", _icon, [0.35,0.7,1,0.88], 0.82] };
-    if (_object isKindOf "StaticWeapon") exitWith { ["STA", _icon, [1,0.88,0.25,0.88], 0.7] };
+    if (_object isKindOf "CAManBase") exitWith { ["INF", "\a3\ui_f\data\map\markers\nato\b_inf.paa", [0.15,0.95,0.75,0.9], 0.78] };
+    if (unitIsUAV _object) exitWith { ["UAV", "\a3\ui_f\data\map\markers\nato\b_uav.paa", [0.45,0.85,1,0.88], 0.72] };
+    if (_object isKindOf "Air") exitWith { ["AIR", "\a3\ui_f\data\map\markers\nato\b_air.paa", [0.35,0.7,1,0.88], 0.82] };
+    if (_object isKindOf "StaticWeapon") exitWith { ["STA", "\a3\ui_f\data\map\markers\nato\b_installation.paa", [1,0.88,0.25,0.88], 0.7] };
 
     if (_object isKindOf "Tank") then {
         if (((_typeInfo find "apc") >= 0) || { (_typeInfo find "btr") >= 0 } || { (_typeInfo find "ifv") >= 0 } || { (_object isKindOf "Wheeled_APC_F") }) exitWith {
-            ["APC", _icon, [1,0.68,0.28,0.9], 0.82]
+            ["APC", "\a3\ui_f\data\map\markers\nato\b_mech_inf.paa", [1,0.68,0.28,0.9], 0.82]
         };
-        ["TNK", _icon, [1,0.46,0.22,0.92], 0.95]
+        ["TNK", "\a3\ui_f\data\map\markers\nato\b_armor.paa", [1,0.46,0.22,0.92], 0.95]
     } else {
-        if (_object isKindOf "LandVehicle") exitWith { ["VEH", _icon, [0.35,1,0.52,0.86], 0.76] };
+        if (_object isKindOf "LandVehicle") exitWith { ["VEH", "\a3\ui_f\data\map\markers\nato\b_motor_inf.paa", [0.35,1,0.52,0.86], 0.76] };
         ["OBJ", _icon, [0.7,0.8,0.9,0.8], 0.6]
     }
 };
@@ -239,7 +250,7 @@ PHEN_CS_fnc_CSS_ensureHud = {
     if (isNull _display) exitWith {};
 
     private _layout = call PHEN_CS_fnc_CSS_getHudLayout;
-    _layout params ["_hudScale", "_panelX", "_panelY", "_panelW", "_panelH", "_centerX", "_centerY", "_radius", "_dotBase", "_noseOffset"];
+    _layout params ["_hudScale", "_panelX", "_panelY", "_panelW", "_panelH", "_centerX", "_centerY", "_radius", "_dotBase", "_noseOffset", "_textScale"];
 
     private _bg = _display ctrlCreate ["RscText", -1];
     _bg ctrlSetPosition [_panelX, _panelY, _panelW, _panelH];
@@ -247,7 +258,7 @@ PHEN_CS_fnc_CSS_ensureHud = {
     _bg ctrlCommit 0;
 
     private _text = _display ctrlCreate ["RscStructuredText", -1];
-    _text ctrlSetPosition [_panelX + (0.008 * _hudScale), _panelY + (0.006 * _hudScale), _panelW - (0.016 * _hudScale), 0.055 * _hudScale];
+    _text ctrlSetPosition [_panelX + 0.008, _panelY + 0.006, _panelW - 0.016, 0.078 * _textScale];
     _text ctrlSetBackgroundColor [0, 0, 0, 0];
     _text ctrlSetStructuredText parseText "";
     _text ctrlCommit 0;
@@ -258,16 +269,18 @@ PHEN_CS_fnc_CSS_ensureHud = {
     _center ctrlCommit 0;
 
     for "_i" from 0 to (PHEN_CS_CSS_MaxRadarContacts - 1) do {
-        private _dot = _display ctrlCreate ["RscText", -1];
+        private _dot = _display ctrlCreate ["RscPictureKeepAspect", -1];
         _dot ctrlSetPosition [_centerX, _centerY, _dotBase, _dotBase];
-        _dot ctrlSetBackgroundColor [0.2, 1, 0.55, 0.85];
+        _dot ctrlSetText "\a3\ui_f\data\map\markers\nato\b_unknown.paa";
+        _dot ctrlSetTextColor [0.2, 1, 0.55, 0.85];
         _dot ctrlShow false;
         _dot ctrlCommit 0;
         uiNamespace setVariable [format ["PHEN_CS_CSS_RadarDot_%1", _i], _dot];
 
-        private _nose = _display ctrlCreate ["RscText", -1];
+        private _nose = _display ctrlCreate ["RscPictureKeepAspect", -1];
         _nose ctrlSetPosition [_centerX, _centerY, _dotBase * 0.65, _dotBase * 0.65];
-        _nose ctrlSetBackgroundColor [0.9, 1, 0.95, 0.9];
+        _nose ctrlSetText "\a3\ui_f\data\map\markers\military\arrow2_ca.paa";
+        _nose ctrlSetTextColor [0.9, 1, 0.95, 0.9];
         _nose ctrlShow false;
         _nose ctrlCommit 0;
         uiNamespace setVariable [format ["PHEN_CS_CSS_RadarNose_%1", _i], _nose];
@@ -305,7 +318,7 @@ PHEN_CS_fnc_CSS_updateHud = {
     private _unit = call PHEN_CS_fnc_CSS_getUnit;
     private _contacts = call PHEN_CS_fnc_CSS_getFriendObjects;
     private _mines = allMines select { !isNull _x && { _unit distance _x <= PHEN_CS_CSS_MineRadius } };
-    PHEN_CS_CSS_FocusActive = (inputAction "zoomTemp") > 0;
+    call PHEN_CS_fnc_CSS_applyNativeFocusState;
     PHEN_CS_CSS_FriendContacts = [_unit, _contacts, PHEN_CS_CSS_AllyRange] call PHEN_CS_fnc_CSS_filterVisibleContacts;
     PHEN_CS_CSS_MineContacts = [_unit, _mines, PHEN_CS_CSS_MineRadius, true] call PHEN_CS_fnc_CSS_filterVisibleContacts;
     PHEN_CS_CSS_RadarContacts = PHEN_CS_CSS_FriendContacts apply { _x # 0 };
@@ -316,28 +329,22 @@ PHEN_CS_fnc_CSS_updateHud = {
     _scaleIndex = (_scaleIndex max 0) min ((count PHEN_CS_CSS_RadarScaleLevels) - 1);
     private _radarRange = PHEN_CS_CSS_RadarScaleLevels # _scaleIndex;
     private _focusText = if (PHEN_CS_CSS_FocusActive) then { " | FOCUS" } else { "" };
-    private _zoomIndex = missionNamespace getVariable ["PHEN_CS_CSS_ZoomLevelIndex", 0];
-    _zoomIndex = (_zoomIndex max 0) min ((count PHEN_CS_CSS_ZoomLevels) - 1);
-    private _zoomActive = missionNamespace getVariable ["PHEN_CS_CSS_ZoomEnabled", false];
-    PHEN_CS_CSS_ZoomActive = _zoomActive;
-    private _zoomText = if (_zoomActive) then { format [" | ZOOM x%1", PHEN_CS_CSS_ZoomLevels # _zoomIndex] } else { "" };
     private _layout = call PHEN_CS_fnc_CSS_getHudLayout;
-    _layout params ["_hudScale", "_panelX", "_panelY", "_panelW", "_panelH", "_centerX", "_centerY", "_radius", "_dotBase", "_noseOffset"];
+    _layout params ["_hudScale", "_panelX", "_panelY", "_panelW", "_panelH", "_centerX", "_centerY", "_radius", "_dotBase", "_noseOffset", "_textScale"];
 
     if (!isNull _textCtrl) then {
         _textCtrl ctrlSetStructuredText parseText format [
-            "<t size='%6' color='#66ccff'>ARGUS COMBAT OPTICS</t><br/><t size='%7'>%1</t><br/><t size='%8'>RADAR %2m | ALLIES %3 | MINES %4%5%9</t>",
+            "<t size='%6' color='#66ccff'>ARGUS COMBAT OPTICS</t><br/><t size='%7'>%1</t><br/><t size='%8'>RADAR %2m | ALLIES %3 | MINES %4%5</t>",
             call PHEN_CS_fnc_CSS_getVitalsText,
             _radarRange,
             count PHEN_CS_CSS_FriendContacts,
             _mineCount,
             _focusText,
-            0.72 * _hudScale,
-            0.56 * _hudScale,
-            0.52 * _hudScale,
-            _zoomText
+            0.72 * _textScale,
+            0.56 * _textScale,
+            0.52 * _textScale
         ];
-        _textCtrl ctrlSetPosition [_panelX + (0.008 * _hudScale), _panelY + (0.006 * _hudScale), _panelW - (0.016 * _hudScale), 0.062 * _hudScale];
+        _textCtrl ctrlSetPosition [_panelX + 0.008, _panelY + 0.006, _panelW - 0.016, 0.078 * _textScale];
         _textCtrl ctrlCommit 0;
     };
 
@@ -384,19 +391,23 @@ PHEN_CS_fnc_CSS_updateHud = {
                 private _scaled = (_distance / _radarRange) min 1;
                 private _dotX = _centerX + ((sin _angle) * _scaled * _radius);
                 private _dotY = _centerY - ((cos _angle) * _scaled * _radius);
-                private _dotSize = _dotBase + (_dotBase * _sizeFactor);
-                _dot ctrlSetPosition [_dotX, _dotY, _dotSize, _dotSize];
-                _dot ctrlSetBackgroundColor _color;
+                private _dotSize = (_dotBase + (_dotBase * _sizeFactor)) max 0.012;
+                private _headingAngle = (getDirVisual _contact) - _bearing;
+                _dot ctrlSetText _icon;
+                _dot ctrlSetTextColor _color;
+                _dot ctrlSetAngle [_headingAngle, 0.5, 0.5];
+                _dot ctrlSetPosition [_dotX - (_dotSize * 0.5), _dotY - (_dotSize * 0.5), _dotSize, _dotSize];
                 _dot ctrlShow true;
                 _dot ctrlCommit 0;
 
                 if (!isNull _nose) then {
-                    private _heading = ((getDirVisual _contact) - _bearing) * 0.0174533;
-                    private _noseSize = _dotSize * 0.65;
+                    private _heading = _headingAngle * 0.0174533;
+                    private _noseSize = _dotSize * 0.5;
                     private _noseX = _dotX + ((sin _heading) * _noseOffset);
                     private _noseY = _dotY - ((cos _heading) * _noseOffset);
-                    _nose ctrlSetPosition [_noseX, _noseY, _noseSize, _noseSize];
-                    _nose ctrlSetBackgroundColor _color;
+                    _nose ctrlSetTextColor _color;
+                    _nose ctrlSetAngle [_headingAngle, 0.5, 0.5];
+                    _nose ctrlSetPosition [_noseX - (_noseSize * 0.5), _noseY - (_noseSize * 0.5), _noseSize, _noseSize];
                     _nose ctrlShow true;
                     _nose ctrlCommit 0;
                 };
@@ -405,20 +416,104 @@ PHEN_CS_fnc_CSS_updateHud = {
     } forEach _radarList;
 };
 
+PHEN_CS_fnc_CSS_isLauncherWeapon = {
+    params ["_unit", "_weapon", "_ammoCfg"];
+
+    private _simulation = toLower (getText (_ammoCfg >> "simulation"));
+    (_weapon isEqualTo (secondaryWeapon _unit))
+        || { (_simulation find "shotrocket") >= 0 }
+        || { (_simulation find "shotmissile") >= 0 }
+        || { (_simulation find "shotgrenade") >= 0 }
+};
+
+PHEN_CS_fnc_CSS_getMuzzleCfg = {
+    params ["_weapon", "_muzzle", "_mode"];
+
+    private _weaponCfg = configFile >> "CfgWeapons" >> _weapon;
+    private _muzzleCfg = _weaponCfg;
+    if !(_muzzle in ["", _weapon, "this"]) then {
+        private _candidate = _weaponCfg >> _muzzle;
+        if (isClass _candidate) then { _muzzleCfg = _candidate; };
+    };
+
+    private _modeCfg = _muzzleCfg >> _mode;
+    if !(isClass _modeCfg) then { _modeCfg = _muzzleCfg; };
+
+    [_weaponCfg, _muzzleCfg, _modeCfg]
+};
+
 PHEN_CS_fnc_CSS_getAimRay = {
     params ["_unit", "_weapon"];
 
-    private _cameraASL = AGLToASL (positionCameraToWorld [0,0,0]);
-    private _cameraEndASL = AGLToASL (positionCameraToWorld [0,0,5000]);
-    private _cameraDir = vectorNormalized (_cameraEndASL vectorDiff _cameraASL);
-    if ((vectorMagnitude _cameraDir) <= 0.001) then { _cameraDir = vectorNormalized (getCameraViewDirection player); };
-
+    private _startASL = eyePos _unit;
     private _weaponVector = vectorNormalized (_unit weaponDirection _weapon);
-    if ((vectorMagnitude _weaponVector) > 0.001 && { (_weaponVector vectorDotProduct _cameraDir) < 0.35 }) then {
-        _cameraDir = _weaponVector;
+    private _fromWeapon = (vectorMagnitude _weaponVector) > 0.001;
+    private _aimDir = _weaponVector;
+
+    if (!_fromWeapon) then {
+        _aimDir = [_unit] call PHEN_CS_fnc_CSS_getViewDirection;
     };
 
-    [_cameraASL, _cameraDir, _weaponVector]
+    [_startASL, _aimDir, _weaponVector, _fromWeapon]
+};
+
+PHEN_CS_fnc_CSS_getBallisticData = {
+    params ["_unit", "_weapon", "_muzzle", "_mode", "_magazine"];
+
+    if (_weapon isEqualTo "" || { _magazine isEqualTo "" }) exitWith { [] };
+
+    private _magCfg = configFile >> "CfgMagazines" >> _magazine;
+    private _ammo = getText (_magCfg >> "ammo");
+    if (_ammo isEqualTo "") exitWith { [] };
+
+    private _ammoCfg = configFile >> "CfgAmmo" >> _ammo;
+    private _cfgs = [_weapon, _muzzle, _mode] call PHEN_CS_fnc_CSS_getMuzzleCfg;
+    _cfgs params ["_weaponCfg", "_muzzleCfg", "_modeCfg"];
+
+    private _magSpeed = getNumber (_magCfg >> "initSpeed");
+    if (_magSpeed <= 0) then { _magSpeed = getNumber (_ammoCfg >> "typicalSpeed"); };
+
+    private _weaponSpeed = getNumber (_muzzleCfg >> "initSpeed");
+    if (_weaponSpeed == 0 && { isNumber (_modeCfg >> "initSpeed") }) then {
+        _weaponSpeed = getNumber (_modeCfg >> "initSpeed");
+    };
+
+    private _speed = _magSpeed;
+    if (_weaponSpeed > 0) then { _speed = _weaponSpeed; };
+    if (_weaponSpeed < 0) then { _speed = _magSpeed * (abs _weaponSpeed); };
+
+    private _airFriction = getNumber (_ammoCfg >> "airFriction");
+    if ((getNumber (_ammoCfg >> "artilleryLock")) == 1) then { _airFriction = 0; };
+
+    private _gravityCoef = 1;
+    if (isNumber (_ammoCfg >> "coefGravity")) then { _gravityCoef = getNumber (_ammoCfg >> "coefGravity"); };
+
+    private _timeToLive = 5;
+    if (isNumber (_ammoCfg >> "timeToLive")) then { _timeToLive = getNumber (_ammoCfg >> "timeToLive"); };
+    if (_timeToLive <= 0) then { _timeToLive = 5; };
+
+    private _simulation = toLower (getText (_ammoCfg >> "simulation"));
+    private _isLauncher = [_unit, _weapon, _ammoCfg] call PHEN_CS_fnc_CSS_isLauncherWeapon;
+    private _isSupported = ((_simulation find "shotbullet") >= 0) || { (_simulation find "shotshell") >= 0 };
+
+    [_speed, _airFriction, _gravityCoef, _timeToLive, _simulation, _isLauncher, _isSupported, _ammo, _ammoCfg]
+};
+
+PHEN_CS_fnc_CSS_isAimHitValid = {
+    params ["_startASL", "_hit"];
+
+    if !(_hit isEqualType []) exitWith { false };
+    if ((count _hit) < 1) exitWith { false };
+
+    private _hitPosASL = _hit # 0;
+    if !(_hitPosASL isEqualType []) exitWith { false };
+    if ((count _hitPosASL) < 3) exitWith { false };
+    if ((_startASL distance _hitPosASL) < PHEN_CS_CSS_MinAimSolutionDistance) exitWith { false };
+
+    private _hitAGL = ASLToAGL _hitPosASL;
+    if ((_hitAGL # 2) < -1) exitWith { false };
+
+    true
 };
 
 PHEN_CS_fnc_CSS_getZeroDistance = {
@@ -471,29 +566,27 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     private _zeroing = _unit currentZeroing [_weapon, _muzzle];
     private _zeroDistance = [_zeroing] call PHEN_CS_fnc_CSS_getZeroDistance;
     private _aimRay = [_unit, _weapon] call PHEN_CS_fnc_CSS_getAimRay;
-    _aimRay params ["_startASL", "_sightDir", "_weaponDir"];
+    _aimRay params ["_startASL", "_sightDir", "_weaponDir", "_fromWeapon"];
     if ((vectorMagnitude _sightDir) <= 0.001) exitWith { PHEN_CS_CSS_AimSolution = []; };
 
     private _endASL = _startASL vectorAdd (_sightDir vectorMultiply 5000);
-    private _rayHits = lineIntersectsSurfaces [_startASL, _endASL, _unit, vehicle _unit, true, 1, "FIRE", "NONE", true];
+    private _rayHits = lineIntersectsSurfaces [_startASL, _endASL, _unit, vehicle _unit, true, 1, "FIRE", "GEOM", true];
     private _rayPosASL = if (_rayHits isEqualTo []) then { [] } else { (_rayHits # 0) # 0 };
 
-    private _magCfg = configFile >> "CfgMagazines" >> _magazine;
-    private _ammo = getText (_magCfg >> "ammo");
-    private _ammoCfg = configFile >> "CfgAmmo" >> _ammo;
-    private _weaponCfg = configFile >> "CfgWeapons" >> _weapon;
-    private _muzzleCfg = if (_muzzle != _weapon) then { _weaponCfg >> _muzzle } else { _weaponCfg };
-
-    private _speed = getNumber (_muzzleCfg >> "initSpeed");
-    if (_speed <= 0) then { _speed = getNumber (_weaponCfg >> "initSpeed"); };
-    if (_speed <= 0) then { _speed = getNumber (_magCfg >> "initSpeed"); };
-    if (_speed <= 0) then { _speed = getNumber (_ammoCfg >> "typicalSpeed"); };
+    private _ballisticData = [_unit, _weapon, _muzzle, _mode, _magazine] call PHEN_CS_fnc_CSS_getBallisticData;
+    if (_ballisticData isEqualTo []) exitWith { PHEN_CS_CSS_AimSolution = []; };
+    _ballisticData params ["_speed", "_airFriction", "_gravityCoef", "_timeToLive", "_simulation", "_isLauncher", "_isSupported", "_ammo", "_ammoCfg"];
 
     private _hasACEAdvancedBallistics = isClass (configFile >> "CfgPatches" >> "ace_advanced_ballistics");
     private _label = if (_hasACEAdvancedBallistics) then { "APPROX ACE" } else { "PREDICTED" };
 
+    if (!_isSupported || { _isLauncher }) exitWith {
+        private _noSolution = "NO SOLUTION";
+        PHEN_CS_CSS_AimSolution = [];
+    };
+
     if (_speed <= 0) exitWith {
-        if (_rayPosASL isEqualTo []) then {
+        if (_rayHits isEqualTo [] || { !([_startASL, _rayHits # 0] call PHEN_CS_fnc_CSS_isAimHitValid) }) then {
             PHEN_CS_CSS_AimSolution = [];
         } else {
             PHEN_CS_CSS_AimSolution = [_rayPosASL, diag_tickTime + 0.35, "ray", "APPROX", _zeroDistance];
@@ -504,27 +597,26 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     if (_dt <= 0) then { _dt = 0.025; };
     _dt = (_dt max 0.01) min 0.05;
 
-    private _airFriction = getNumber (_ammoCfg >> "airFriction");
-    private _gravityCoef = getNumber (_ammoCfg >> "coefGravity");
-    if (_gravityCoef <= 0) then { _gravityCoef = 1; };
-
-    private _dir = [_sightDir, _speed, _zeroDistance, _gravityCoef] call PHEN_CS_fnc_CSS_applyZeroing;
+    private _dir = if (_fromWeapon) then { _sightDir } else { [_sightDir, _speed, _zeroDistance, _gravityCoef] call PHEN_CS_fnc_CSS_applyZeroing };
     private _pos = _startASL;
     private _vel = _dir vectorMultiply _speed;
     private _hit = [];
-    private _maxSteps = (ceil (8 / _dt)) min 600;
+    private _maxSteps = (ceil (_timeToLive / _dt)) min 900;
 
     for "_i" from 0 to _maxSteps do {
         private _speedNow = vectorMagnitude _vel;
-        if (_airFriction < 0 && { _speedNow > 0 }) then {
-            private _dragAccel = _airFriction * _speedNow * _speedNow;
-            _vel = _vel vectorAdd ((vectorNormalized _vel) vectorMultiply (_dragAccel * _dt));
+        if (_airFriction != 0 && { _speedNow > 0 }) then {
+            private _dragAccel = _vel vectorMultiply (_speedNow * _airFriction);
+            _vel = _vel vectorAdd (_dragAccel vectorMultiply _dt);
         };
 
         _vel = _vel vectorAdd [0,0,(-9.81 * _gravityCoef * _dt)];
         private _next = _pos vectorAdd (_vel vectorMultiply _dt);
-        private _segHits = lineIntersectsSurfaces [_pos, _next, _unit, vehicle _unit, true, 1, "FIRE", "NONE", true];
-        if !(_segHits isEqualTo []) exitWith { _hit = _segHits # 0; };
+        private _segHits = lineIntersectsSurfaces [_pos, _next, _unit, vehicle _unit, true, 1, "FIRE", "GEOM", true];
+        if !(_segHits isEqualTo []) then {
+            private _hitPosASL = (_segHits # 0) # 0;
+            if ([_startASL, _segHits # 0] call PHEN_CS_fnc_CSS_isAimHitValid) exitWith { _hit = _segHits # 0; };
+        };
         _pos = _next;
         if ((_startASL distance _pos) > 5000) exitWith {};
     };
@@ -532,12 +624,35 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     if !(_hit isEqualTo []) then {
         PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "ballistic", _label, _zeroDistance];
     } else {
-        if (_rayPosASL isEqualTo []) then {
+        if (_rayHits isEqualTo [] || { !([_startASL, _rayHits # 0] call PHEN_CS_fnc_CSS_isAimHitValid) }) then {
             PHEN_CS_CSS_AimSolution = [];
         } else {
             PHEN_CS_CSS_AimSolution = [_rayPosASL, diag_tickTime + 0.35, "ray", "APPROX", _zeroDistance];
         };
     };
+};
+
+PHEN_CS_fnc_CSS_applyNativeFocusState = {
+    PHEN_CS_CSS_FocusActive = (inputAction "zoomTemp") > 0;
+    PHEN_CS_CSS_FocusKeyNames = actionKeysNamesArray "zoomTemp";
+    PHEN_CS_CSS_FocusActive
+};
+
+PHEN_CS_fnc_CSS_showFocusStatus = {
+    if !(call PHEN_CS_fnc_CSS_hasSuite) exitWith { false };
+
+    call PHEN_CS_fnc_CSS_applyNativeFocusState;
+    private _keys = PHEN_CS_CSS_FocusKeyNames;
+    private _keyText = if (_keys isEqualTo []) then { "Unbound" } else { _keys joinString ", " };
+    private _stateText = if (PHEN_CS_CSS_FocusActive) then { "ACTIVE" } else { "READY" };
+
+    hintSilent parseText format [
+        "<t color='#66ccff'>ARGUS NATIVE FOCUS</t><br/><t size='1.05'>%1</t><br/><t size='0.85'>Hold: %2</t>",
+        _stateText,
+        _keyText
+    ];
+
+    false
 };
 
 PHEN_CS_fnc_CSS_draw3D = {
