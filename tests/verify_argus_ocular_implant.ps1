@@ -77,6 +77,18 @@ function Assert-Regex {
     }
 }
 
+function Assert-NotRegex {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    if ([regex]::IsMatch($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline -bor [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        $script:errors.Add($Message)
+    }
+}
+
 Assert-Contains $settings 'PHEN_CS_Cybernetic_OCULAR_ITEM_3_Name' 'Missing CBA name setting for PHEN_CS_Cybernetic_OCULAR_ITEM_3.'
 Assert-Contains $settings 'Argus Combat Optics Mk.IV' 'Missing Argus Combat Optics Mk.IV default name.'
 Assert-Contains $settings 'PHEN_CS_Cybernetic_OCULAR_ITEM_3_Effects' 'Missing CBA effects setting for PHEN_CS_Cybernetic_OCULAR_ITEM_3.'
@@ -93,6 +105,10 @@ Assert-Contains $preInit '"PHEN_CS_LowLightOptics_MkIV"' 'Mk.IV cyber NVG class 
 
 Assert-Contains $postInit 'PHEN_CS_CSS_MineRadius = 50;' 'Mine detection radius must be 50 meters.'
 Assert-Contains $postInit 'PHEN_CS_CSS_AllyRange = 1000;' 'Allied unit highlight range must be 1000 meters.'
+Assert-Contains $postInit 'PHEN_CS_CSS_CloseRadius = 10;' 'Argus must always render close contacts inside 10 meters.'
+Assert-Contains $postInit 'PHEN_CS_CSS_NearFOVRange = 100;' 'Argus must use the wider near-view cone out to 100 meters.'
+Assert-Contains $postInit 'PHEN_CS_CSS_NearFOVDegrees = 110;' 'Argus near-view cone must be 110 degrees.'
+Assert-Contains $postInit 'PHEN_CS_CSS_NearFOVDot = cos (PHEN_CS_CSS_NearFOVDegrees / 2);' 'Argus near-view cone must derive its dot threshold from 110 degrees.'
 Assert-Contains $postInit 'PHEN_CS_CSS_RadarScaleLevels' 'Combat Sensor Suite radar scale levels are missing.'
 Assert-Contains $postInit 'PHEN_CS_CSS_AimSolution' 'Combat Sensor Suite pre-fire aim solution state is missing.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_start' 'Combat Sensor Suite runtime start function is missing.'
@@ -113,15 +129,47 @@ Assert-Contains $postInit 'inputAction "zoomTemp"' 'Argus must observe native vi
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_classifyContact' 'Combat Sensor Suite contact classifier is missing.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_filterVisibleContacts' 'Combat Sensor Suite visible-contact filter is missing.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_updateAimPrediction' 'Combat Sensor Suite pre-fire prediction updater is missing.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getAimRay' 'Aim prediction must centralize weapon/camera aim-ray selection.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getZeroDistance' 'Aim prediction must normalize currentZeroing output before using it.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_applyZeroing' 'Aim prediction must apply zeroing to the simulated projectile direction.'
+Assert-Contains $postInit 'secondaryWeapon _unit' 'Aim prediction must include launcher/secondary weapons such as RPGs.'
+
+Assert-Contains $settings 'PHEN_CS_CSS_AllyMarkerScale' 'Missing CBA setting for per-client Argus allied marker scale.'
+Assert-Contains $settings 'PHEN_CS_CSS_MineMarkerScale' 'Missing CBA setting for per-client Argus mine marker scale.'
+Assert-Contains $settings 'PHEN_CS_CSS_HudScale' 'Missing CBA setting for per-client Argus HUD/radar scale.'
+Assert-Regex $settings '"PHEN_CS_CSS_AllyMarkerScale"\s*,\s*"SLIDER"[\s\S]*\[0\.25,\s*2,\s*1,\s*2\][\s\S]*\n\s*0,' 'Argus allied marker scale must be a local 0.25-2.00 slider with default 1.00.'
+Assert-Regex $settings '"PHEN_CS_CSS_MineMarkerScale"\s*,\s*"SLIDER"[\s\S]*\[0\.25,\s*2,\s*1,\s*2\][\s\S]*\n\s*0,' 'Argus mine marker scale must be a local 0.25-2.00 slider with default 1.00.'
+Assert-Regex $settings '"PHEN_CS_CSS_HudScale"\s*,\s*"SLIDER"[\s\S]*\[0\.5,\s*2,\s*1,\s*2\][\s\S]*\n\s*0,' 'Argus HUD scale must be a local 0.50-2.00 slider with default 1.00.'
 
 Assert-Regex $postInit 'PHEN_CS_CSS_FriendContacts\s*=\s*[^;]*call\s+PHEN_CS_fnc_CSS_filterVisibleContacts' 'Friend contact cache must be filtered by the view/visibility pipeline.'
 Assert-Regex $postInit 'PHEN_CS_CSS_MineContacts\s*=\s*[^;]*call\s+PHEN_CS_fnc_CSS_filterVisibleContacts' 'Mine contact cache must be filtered by the view/visibility pipeline.'
+Assert-Regex $postInit 'private\s+_distance\s*=\s*getPosASL _unit distance _targetASL;[\s\S]*if\s*\(_distance <= PHEN_CS_CSS_CloseRadius\)\s*exitWith\s*\{\s*true\s*\};' 'Marker visibility must bypass angle/screen checks for contacts inside 10 meters.'
+Assert-Regex $postInit 'if\s*\(_distance <= PHEN_CS_CSS_NearFOVRange && \{ _forwardDot < PHEN_CS_CSS_NearFOVDot \}\)\s*exitWith\s*\{\s*false\s*\};' 'Marker visibility must use a 110-degree cone inside 100 meters.'
+Assert-Regex $postInit 'if\s*\(_distance > PHEN_CS_CSS_NearFOVRange\)\s*then\s*\{[\s\S]*worldToScreen' 'Markers beyond 100 meters must use strict screen gating.'
 Assert-Regex $postInit 'PHEN_CS_fnc_CSS_draw3D\s*=\s*\{[\s\S]*PHEN_CS_fnc_CSS_isMarkerVisible[\s\S]*drawIcon3D' 'Draw3D must gate marker rendering before drawIcon3D.'
 Assert-Regex $postInit 'format \["%1 %2 %3m"' '3D labels must include classification, display label, and distance.'
+Assert-Regex $postInit 'private\s+_allyMarkerScale\s*=\s*\(\(missionNamespace getVariable \["PHEN_CS_CSS_AllyMarkerScale", 1\]\) max 0\.25\) min 2;' 'Draw3D must read and clamp the allied marker scale.'
+Assert-Regex $postInit 'private\s+_mineMarkerScale\s*=\s*\(\(missionNamespace getVariable \["PHEN_CS_CSS_MineMarkerScale", 1\]\) max 0\.25\) min 2;' 'Draw3D must read and clamp the mine marker scale.'
+Assert-Regex $postInit 'linearConversion \[0, PHEN_CS_CSS_AllyRange, _distance, 0\.95, 0\.23, true\]\) \* _sizeFactor \* _allyMarkerScale' 'Allied 3D icon size must apply the allied marker scale.'
+Assert-Regex $postInit '0\.75 \* _mineMarkerScale' 'Mine 3D icon size must apply the mine marker scale.'
+Assert-Regex $postInit 'private\s+_hudScale\s*=\s*\(\(missionNamespace getVariable \["PHEN_CS_CSS_HudScale", 1\]\) max 0\.5\) min 2;' 'Argus HUD/radar must read and clamp the local HUD scale.'
+Assert-Regex $postInit 'PHEN_CS_CSS_RadarContacts = PHEN_CS_CSS_FriendContacts apply \{ _x # 0 \};' 'Argus radar must use the same visible-contact cache as 3D markers.'
+
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_updateAimPrediction\s*=\s*\{[\s\S]*call\s+PHEN_CS_fnc_CSS_getAimRay[\s\S]*call\s+PHEN_CS_fnc_CSS_applyZeroing' 'Aim prediction must build a zeroing-aware live aim solution.'
+Assert-NotRegex $postInit 'if\s*!\(_weapon in \[primaryWeapon _unit, handgunWeapon _unit\]\)' 'Aim prediction must not reject RPGs/launchers with a primary/handgun-only filter.'
+Assert-NotRegex $postInit 'private\s+_dir\s*=\s*vectorNormalized\s*\(_unit weaponDirection _weapon\);[\s\S]*private\s+_startASL\s*=\s*\(eyePos _unit\)' 'Aim prediction still uses the old eyePos/weaponDirection-only path.'
 
 Assert-Contains $stringtable 'STR_PHEN_CS_CBA_SUB_OCULAR_4' 'Stringtable is missing Ocular 4 subcategory localization.'
 Assert-Contains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_RADAR_SCALE' 'Stringtable is missing Combat Sensor radar scale key localization.'
 Assert-Contains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_RADAR_SCALE_TT' 'Stringtable is missing Combat Sensor radar scale key tooltip localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_ALLY_MARKER_SCALE' 'Stringtable is missing Argus allied marker scale localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_ALLY_MARKER_SCALE_TT' 'Stringtable is missing Argus allied marker scale tooltip localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_MINE_MARKER_SCALE' 'Stringtable is missing Argus mine marker scale localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_MINE_MARKER_SCALE_TT' 'Stringtable is missing Argus mine marker scale tooltip localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_HUD_SCALE' 'Stringtable is missing Argus HUD scale localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_HUD_SCALE_TT' 'Stringtable is missing Argus HUD scale tooltip localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_ZOOM_TOGGLE' 'Stringtable is missing Argus zoom toggle key localization.'
+Assert-Contains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_ZOOM_CYCLE' 'Stringtable is missing Argus zoom cycle key localization.'
 
 if ($config -ne '') {
     Assert-Contains $config 'class PHEN_CS_Item_LowLightOptics_MkIV' 'Config is missing PHEN_CS_Item_LowLightOptics_MkIV holder.'

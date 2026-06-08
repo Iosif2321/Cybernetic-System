@@ -4021,3 +4021,57 @@ PHEN_CS_fnc_TacHUD_toggle = {
     {},
     [0, [false, false, false]]
 ] call CBA_fnc_addKeybind;
+
+[
+    PHEN_CS_KEYBIND_CAT_TACHUD,
+    "PHEN_CS_CSS_ToggleZoomKey",
+    [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM_TOGGLE"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM_TOGGLE_TT")],
+    {
+        if (!(isNull findDisplay 49) || !(isNull findDisplay 312) || visibleMap) exitWith { false };
+        private _unit = missionNamespace getVariable ["bis_fnc_moduleRemoteControl_unit", player];
+        if !(_unit getVariable ["PHEN_CS_Abillity_CombatSensorSuite", false]) exitWith { false };
+
+        private _enabled = !(missionNamespace getVariable ["PHEN_CS_CSS_ZoomEnabled", false]);
+        missionNamespace setVariable ["PHEN_CS_CSS_ZoomEnabled", _enabled];
+        private _levels = missionNamespace getVariable ["PHEN_CS_CSS_ZoomLevels", [1,2,4]];
+        private _index = (missionNamespace getVariable ["PHEN_CS_CSS_ZoomLevelIndex", 0]) max 0;
+        if (_index >= count _levels) then { _index = 0; };
+
+        private _stateText = if (_enabled) then { "ON" } else { "OFF" };
+        hintSilent parseText format [
+            "<t color='#66ccff'>ARGUS DIGITAL ZOOM</t><br/><t size='1.2'>%1 x%2</t>",
+            _stateText,
+            _levels # _index
+        ];
+
+        false
+    },
+    {},
+    [0, [false, false, false]]
+] call CBA_fnc_addKeybind;
+
+[
+    PHEN_CS_KEYBIND_CAT_TACHUD,
+    "PHEN_CS_CSS_CycleZoomLevelKey",
+    [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM_CYCLE"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_ZOOM_CYCLE_TT")],
+    {
+        if (!(isNull findDisplay 49) || !(isNull findDisplay 312) || visibleMap) exitWith { false };
+        private _unit = missionNamespace getVariable ["bis_fnc_moduleRemoteControl_unit", player];
+        if !(_unit getVariable ["PHEN_CS_Abillity_CombatSensorSuite", false]) exitWith { false };
+
+        private _levels = missionNamespace getVariable ["PHEN_CS_CSS_ZoomLevels", [1,2,4]];
+        private _index = (missionNamespace getVariable ["PHEN_CS_CSS_ZoomLevelIndex", 0]) + 1;
+        if (_index >= count _levels) then { _index = 0; };
+        missionNamespace setVariable ["PHEN_CS_CSS_ZoomLevelIndex", _index];
+        missionNamespace setVariable ["PHEN_CS_CSS_ZoomEnabled", true];
+
+        hintSilent parseText format [
+            "<t color='#66ccff'>ARGUS DIGITAL ZOOM</t><br/><t size='1.2'>x%1</t>",
+            _levels # _index
+        ];
+
+        false
+    },
+    {},
+    [0, [false, false, false]]
+] call CBA_fnc_addKeybind;

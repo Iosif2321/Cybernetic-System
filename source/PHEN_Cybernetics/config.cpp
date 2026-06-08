@@ -899,7 +899,7 @@ class CfgWeapons
 		icon="\PHEN_Cybernetics\Data\ocular_3_ca.paa";
 		displayName="Argus Combat Optics Mk.IV";
 		descriptionShort="Cybernetic ocular implant. Grants combat sensor suite, night vision, and thermal imaging.";
-		descriptionUse="Integrated Argus combat ocular array with view-gated mine recognition, allied-unit tracking, medical telemetry, approximate pre-fire aim prediction, radar scale control, night vision, and thermal imaging. Requires implantation by a licensed Ripperdoc.";
+		descriptionUse="Integrated Argus combat ocular array with view-gated mine recognition, allied-unit tracking, medical telemetry, zeroing-aware live aim marker, radar scale control, local HUD/marker scale controls, night vision, and thermal imaging. Requires implantation by a licensed Ripperdoc.";
 		visionMode[]=
 		{
 			"Normal",

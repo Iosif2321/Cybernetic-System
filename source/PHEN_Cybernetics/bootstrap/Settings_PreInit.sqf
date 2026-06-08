@@ -125,6 +125,45 @@ PHEN_CS_HasKAT = isClass (configFile >> "CfgPatches" >> "kat_main");
     }
 ] call CBA_fnc_addSetting;
 
+[
+    "PHEN_CS_CSS_HudScale",
+    "SLIDER",
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CSS_HUD_SCALE"), PHEN_CS_L("STR_PHEN_CS_CBA_CSS_HUD_SCALE_TT")],
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_TACHUD"), PHEN_CS_L("STR_PHEN_CS_CBA_SUB_VISUALS")],
+    [0.5, 2, 1, 2],
+    0,
+    {
+        params ["_value"];
+        PHEN_CS_CSS_HudScale = _value;
+    }
+] call CBA_fnc_addSetting;
+
+[
+    "PHEN_CS_CSS_AllyMarkerScale",
+    "SLIDER",
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CSS_ALLY_MARKER_SCALE"), PHEN_CS_L("STR_PHEN_CS_CBA_CSS_ALLY_MARKER_SCALE_TT")],
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_TACHUD"), PHEN_CS_L("STR_PHEN_CS_CBA_SUB_VISUALS")],
+    [0.25, 2, 1, 2],
+    0,
+    {
+        params ["_value"];
+        PHEN_CS_CSS_AllyMarkerScale = _value;
+    }
+] call CBA_fnc_addSetting;
+
+[
+    "PHEN_CS_CSS_MineMarkerScale",
+    "SLIDER",
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CSS_MINE_MARKER_SCALE"), PHEN_CS_L("STR_PHEN_CS_CBA_CSS_MINE_MARKER_SCALE_TT")],
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_TACHUD"), PHEN_CS_L("STR_PHEN_CS_CBA_SUB_VISUALS")],
+    [0.25, 2, 1, 2],
+    0,
+    {
+        params ["_value"];
+        PHEN_CS_CSS_MineMarkerScale = _value;
+    }
+] call CBA_fnc_addSetting;
+
 /*
     General
 */
@@ -1882,7 +1921,7 @@ PHEN_CS_HasKAT = isClass (configFile >> "CfgPatches" >> "kat_main");
     "EDITBOX",
     PHEN_CS_L("STR_PHEN_CS_CBA_FIELD_TOOLTIP"),
     [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_CYBERWARE"),PHEN_CS_L("STR_PHEN_CS_CBA_SUB_OCULAR_4")],
-    "Argus Combat Optics Mk.IV: Combat sensor suite with mine recognition, allied unit tracking, medical telemetry, shot-impact marking, integrated binoculars, night vision, and thermal imaging.",
+    "Argus Combat Optics Mk.IV: Combat sensor suite with mine recognition, allied unit tracking, medical telemetry, zeroing-aware live aim marker, radar scale control, native focus tracking, night vision, and thermal imaging.",
     1,
     {
         params ["_value"];

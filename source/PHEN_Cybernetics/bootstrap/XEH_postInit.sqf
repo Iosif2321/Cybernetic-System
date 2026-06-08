@@ -2,13 +2,19 @@ if (!hasInterface) exitWith {};
 
 PHEN_CS_CSS_MineRadius = 50;
 PHEN_CS_CSS_AllyRange = 1000;
+PHEN_CS_CSS_CloseRadius = 10;
+PHEN_CS_CSS_NearFOVRange = 100;
+PHEN_CS_CSS_NearFOVDegrees = 110;
+PHEN_CS_CSS_NearFOVDot = cos (PHEN_CS_CSS_NearFOVDegrees / 2);
 PHEN_CS_CSS_RadarScaleLevels = [250,500,1000,2000];
+PHEN_CS_CSS_ZoomLevels = [1,2,4];
 PHEN_CS_CSS_MaxRadarContacts = 32;
 PHEN_CS_CSS_AimSolution = [];
 PHEN_CS_CSS_FriendContacts = [];
 PHEN_CS_CSS_MineContacts = [];
 PHEN_CS_CSS_RadarContacts = [];
 PHEN_CS_CSS_FocusActive = false;
+PHEN_CS_CSS_ZoomActive = false;
 
 PHEN_CS_fnc_CSS_getUnit = {
     private _unit = missionNamespace getVariable ["bis_fnc_moduleRemoteControl_unit", player];
@@ -19,6 +25,20 @@ PHEN_CS_fnc_CSS_getUnit = {
 PHEN_CS_fnc_CSS_hasSuite = {
     private _unit = call PHEN_CS_fnc_CSS_getUnit;
     (!isNull _unit) && { alive _unit } && { _unit getVariable ["PHEN_CS_Abillity_CombatSensorSuite", false] }
+};
+
+PHEN_CS_fnc_CSS_getHudLayout = {
+    private _hudScale = ((missionNamespace getVariable ["PHEN_CS_CSS_HudScale", 1]) max 0.5) min 2;
+    private _panelW = 0.22 * _hudScale;
+    private _panelH = 0.235 * _hudScale;
+    private _panelX = safeZoneX + safeZoneW - (0.015 + _panelW);
+    private _panelY = safeZoneY + safeZoneH - (0.06 + _panelH);
+    private _centerX = _panelX + (0.11 * _hudScale);
+    private _centerY = _panelY + (0.148 * _hudScale);
+    private _radius = 0.095 * _hudScale;
+    private _dotBase = 0.004 * _hudScale;
+    private _noseOffset = 0.008 * _hudScale;
+    [_hudScale, _panelX, _panelY, _panelW, _panelH, _centerX, _centerY, _radius, _dotBase, _noseOffset]
 };
 
 PHEN_CS_fnc_CSS_isFriendly = {
@@ -80,23 +100,50 @@ PHEN_CS_fnc_CSS_isMarkerVisible = {
 
     if (isNull _unit || { !alive _unit }) exitWith { false };
     if ((count _targetASL) < 3) exitWith { false };
-    if ((getPosASL _unit distance _targetASL) > _range) exitWith { false };
+    private _distance = getPosASL _unit distance _targetASL;
+    if (_distance > _range) exitWith { false };
+    if (_distance <= PHEN_CS_CSS_CloseRadius) exitWith { true };
 
-    private _screen = worldToScreen (ASLToAGL _targetASL);
-    if (_screen isEqualTo []) exitWith { false };
-    _screen params ["_screenX", "_screenY"];
-    if (_screenX < 0 || { _screenX > 1 } || { _screenY < 0 } || { _screenY > 1 }) exitWith { false };
+    private _cameraASL = AGLToASL (positionCameraToWorld [0,0,0]);
+    private _cameraForwardASL = AGLToASL (positionCameraToWorld [0,0,1]);
+    private _cameraDir = vectorNormalized (_cameraForwardASL vectorDiff _cameraASL);
+    if ((vectorMagnitude _cameraDir) <= 0.001) then { _cameraDir = vectorNormalized (getCameraViewDirection player); };
+    private _toTarget = _targetASL vectorDiff _cameraASL;
+    if ((vectorMagnitude _toTarget) <= 0.1) exitWith { false };
+
+    private _forwardDot = _cameraDir vectorDotProduct (vectorNormalized _toTarget);
+    if (_forwardDot <= 0) exitWith { false };
+    if (_distance <= PHEN_CS_CSS_NearFOVRange && { _forwardDot < PHEN_CS_CSS_NearFOVDot }) exitWith { false };
+
+    if (_distance > PHEN_CS_CSS_NearFOVRange) then {
+        if (_forwardDot < 0.35) exitWith { false };
+        private _screen = worldToScreen (ASLToAGL _targetASL);
+        if (_screen isEqualTo []) exitWith { false };
+        _screen params ["_screenX", "_screenY"];
+        private _edge = 0.025;
+        if (_screenX < _edge || { _screenX > (1 - _edge) } || { _screenY < _edge } || { _screenY > (1 - _edge) }) exitWith { false };
+    };
+
+    private _visibility = [_unit, "VIEW", _object] checkVisibility [_cameraASL, _targetASL];
+    _visibility > 0.18
+};
+
+PHEN_CS_fnc_CSS_isAimVisible = {
+    params ["_unit", "_targetASL", ["_range", 5000]];
+
+    if (isNull _unit || { !alive _unit }) exitWith { false };
+    if ((count _targetASL) < 3) exitWith { false };
+    if ((getPosASL _unit distance _targetASL) > _range) exitWith { false };
 
     private _cameraASL = AGLToASL (positionCameraToWorld [0,0,0]);
     private _cameraDir = vectorNormalized (getCameraViewDirection player);
     private _toTarget = _targetASL vectorDiff _cameraASL;
     if ((vectorMagnitude _toTarget) <= 0.1) exitWith { false };
+    if ((_cameraDir vectorDotProduct (vectorNormalized _toTarget)) <= 0) exitWith { false };
 
-    private _forwardDot = _cameraDir vectorDotProduct (vectorNormalized _toTarget);
-    if (_forwardDot < 0.2) exitWith { false };
-
-    private _visibility = [_unit, "VIEW", _object] checkVisibility [_cameraASL, _targetASL];
-    _visibility > 0.18
+    private _screen = worldToScreen (ASLToAGL _targetASL);
+    if (_screen isEqualTo []) exitWith { false };
+    true
 };
 
 PHEN_CS_fnc_CSS_filterVisibleContacts = {
@@ -191,10 +238,8 @@ PHEN_CS_fnc_CSS_ensureHud = {
     private _display = findDisplay 46;
     if (isNull _display) exitWith {};
 
-    private _panelX = safeZoneX + safeZoneW - 0.235;
-    private _panelY = safeZoneY + safeZoneH - 0.295;
-    private _panelW = 0.22;
-    private _panelH = 0.235;
+    private _layout = call PHEN_CS_fnc_CSS_getHudLayout;
+    _layout params ["_hudScale", "_panelX", "_panelY", "_panelW", "_panelH", "_centerX", "_centerY", "_radius", "_dotBase", "_noseOffset"];
 
     private _bg = _display ctrlCreate ["RscText", -1];
     _bg ctrlSetPosition [_panelX, _panelY, _panelW, _panelH];
@@ -202,26 +247,26 @@ PHEN_CS_fnc_CSS_ensureHud = {
     _bg ctrlCommit 0;
 
     private _text = _display ctrlCreate ["RscStructuredText", -1];
-    _text ctrlSetPosition [_panelX + 0.008, _panelY + 0.006, _panelW - 0.016, 0.055];
+    _text ctrlSetPosition [_panelX + (0.008 * _hudScale), _panelY + (0.006 * _hudScale), _panelW - (0.016 * _hudScale), 0.055 * _hudScale];
     _text ctrlSetBackgroundColor [0, 0, 0, 0];
     _text ctrlSetStructuredText parseText "";
     _text ctrlCommit 0;
 
     private _center = _display ctrlCreate ["RscText", -1];
-    _center ctrlSetPosition [_panelX + 0.107, _panelY + 0.145, 0.006, 0.006];
+    _center ctrlSetPosition [_centerX - (0.003 * _hudScale), _centerY - (0.003 * _hudScale), 0.006 * _hudScale, 0.006 * _hudScale];
     _center ctrlSetBackgroundColor [0.2, 0.85, 1, 0.9];
     _center ctrlCommit 0;
 
     for "_i" from 0 to (PHEN_CS_CSS_MaxRadarContacts - 1) do {
         private _dot = _display ctrlCreate ["RscText", -1];
-        _dot ctrlSetPosition [_panelX + 0.107, _panelY + 0.145, 0.005, 0.005];
+        _dot ctrlSetPosition [_centerX, _centerY, _dotBase, _dotBase];
         _dot ctrlSetBackgroundColor [0.2, 1, 0.55, 0.85];
         _dot ctrlShow false;
         _dot ctrlCommit 0;
         uiNamespace setVariable [format ["PHEN_CS_CSS_RadarDot_%1", _i], _dot];
 
         private _nose = _display ctrlCreate ["RscText", -1];
-        _nose ctrlSetPosition [_panelX + 0.107, _panelY + 0.145, 0.003, 0.003];
+        _nose ctrlSetPosition [_centerX, _centerY, _dotBase * 0.65, _dotBase * 0.65];
         _nose ctrlSetBackgroundColor [0.9, 1, 0.95, 0.9];
         _nose ctrlShow false;
         _nose ctrlCommit 0;
@@ -261,9 +306,9 @@ PHEN_CS_fnc_CSS_updateHud = {
     private _contacts = call PHEN_CS_fnc_CSS_getFriendObjects;
     private _mines = allMines select { !isNull _x && { _unit distance _x <= PHEN_CS_CSS_MineRadius } };
     PHEN_CS_CSS_FocusActive = (inputAction "zoomTemp") > 0;
-    PHEN_CS_CSS_RadarContacts = _contacts;
     PHEN_CS_CSS_FriendContacts = [_unit, _contacts, PHEN_CS_CSS_AllyRange] call PHEN_CS_fnc_CSS_filterVisibleContacts;
     PHEN_CS_CSS_MineContacts = [_unit, _mines, PHEN_CS_CSS_MineRadius, true] call PHEN_CS_fnc_CSS_filterVisibleContacts;
+    PHEN_CS_CSS_RadarContacts = PHEN_CS_CSS_FriendContacts apply { _x # 0 };
 
     private _mineCount = count PHEN_CS_CSS_MineContacts;
     private _textCtrl = uiNamespace getVariable ["PHEN_CS_CSS_TextCtrl", controlNull];
@@ -271,23 +316,41 @@ PHEN_CS_fnc_CSS_updateHud = {
     _scaleIndex = (_scaleIndex max 0) min ((count PHEN_CS_CSS_RadarScaleLevels) - 1);
     private _radarRange = PHEN_CS_CSS_RadarScaleLevels # _scaleIndex;
     private _focusText = if (PHEN_CS_CSS_FocusActive) then { " | FOCUS" } else { "" };
+    private _zoomIndex = missionNamespace getVariable ["PHEN_CS_CSS_ZoomLevelIndex", 0];
+    _zoomIndex = (_zoomIndex max 0) min ((count PHEN_CS_CSS_ZoomLevels) - 1);
+    private _zoomActive = missionNamespace getVariable ["PHEN_CS_CSS_ZoomEnabled", false];
+    PHEN_CS_CSS_ZoomActive = _zoomActive;
+    private _zoomText = if (_zoomActive) then { format [" | ZOOM x%1", PHEN_CS_CSS_ZoomLevels # _zoomIndex] } else { "" };
+    private _layout = call PHEN_CS_fnc_CSS_getHudLayout;
+    _layout params ["_hudScale", "_panelX", "_panelY", "_panelW", "_panelH", "_centerX", "_centerY", "_radius", "_dotBase", "_noseOffset"];
 
     if (!isNull _textCtrl) then {
         _textCtrl ctrlSetStructuredText parseText format [
-            "<t size='0.72' color='#66ccff'>ARGUS COMBAT OPTICS</t><br/><t size='0.56'>%1</t><br/><t size='0.52'>RADAR %2m | ALLIES %3 | MINES %4%5</t>",
+            "<t size='%6' color='#66ccff'>ARGUS COMBAT OPTICS</t><br/><t size='%7'>%1</t><br/><t size='%8'>RADAR %2m | ALLIES %3 | MINES %4%5%9</t>",
             call PHEN_CS_fnc_CSS_getVitalsText,
             _radarRange,
             count PHEN_CS_CSS_FriendContacts,
             _mineCount,
-            _focusText
+            _focusText,
+            0.72 * _hudScale,
+            0.56 * _hudScale,
+            0.52 * _hudScale,
+            _zoomText
         ];
+        _textCtrl ctrlSetPosition [_panelX + (0.008 * _hudScale), _panelY + (0.006 * _hudScale), _panelW - (0.016 * _hudScale), 0.062 * _hudScale];
+        _textCtrl ctrlCommit 0;
     };
 
-    private _panelX = safeZoneX + safeZoneW - 0.235;
-    private _panelY = safeZoneY + safeZoneH - 0.295;
-    private _centerX = _panelX + 0.11;
-    private _centerY = _panelY + 0.148;
-    private _radius = 0.095;
+    private _bgCtrl = uiNamespace getVariable ["PHEN_CS_CSS_BGCtrl", controlNull];
+    if (!isNull _bgCtrl) then {
+        _bgCtrl ctrlSetPosition [_panelX, _panelY, _panelW, _panelH];
+        _bgCtrl ctrlCommit 0;
+    };
+    private _centerCtrl = uiNamespace getVariable ["PHEN_CS_CSS_CenterCtrl", controlNull];
+    if (!isNull _centerCtrl) then {
+        _centerCtrl ctrlSetPosition [_centerX - (0.003 * _hudScale), _centerY - (0.003 * _hudScale), 0.006 * _hudScale, 0.006 * _hudScale];
+        _centerCtrl ctrlCommit 0;
+    };
     private _bearing = getDirVisual _unit;
 
     for "_i" from 0 to (PHEN_CS_CSS_MaxRadarContacts - 1) do {
@@ -303,7 +366,7 @@ PHEN_CS_fnc_CSS_updateHud = {
         if (_distance <= _radarRange) then {
             _radarList pushBack [_distance, _x];
         };
-    } forEach _contacts;
+    } forEach PHEN_CS_CSS_RadarContacts;
     _radarList sort true;
     if ((count _radarList) > PHEN_CS_CSS_MaxRadarContacts) then { _radarList resize PHEN_CS_CSS_MaxRadarContacts; };
 
@@ -321,7 +384,7 @@ PHEN_CS_fnc_CSS_updateHud = {
                 private _scaled = (_distance / _radarRange) min 1;
                 private _dotX = _centerX + ((sin _angle) * _scaled * _radius);
                 private _dotY = _centerY - ((cos _angle) * _scaled * _radius);
-                private _dotSize = 0.004 + (0.004 * _sizeFactor);
+                private _dotSize = _dotBase + (_dotBase * _sizeFactor);
                 _dot ctrlSetPosition [_dotX, _dotY, _dotSize, _dotSize];
                 _dot ctrlSetBackgroundColor _color;
                 _dot ctrlShow true;
@@ -330,8 +393,8 @@ PHEN_CS_fnc_CSS_updateHud = {
                 if (!isNull _nose) then {
                     private _heading = ((getDirVisual _contact) - _bearing) * 0.0174533;
                     private _noseSize = _dotSize * 0.65;
-                    private _noseX = _dotX + ((sin _heading) * 0.008);
-                    private _noseY = _dotY - ((cos _heading) * 0.008);
+                    private _noseX = _dotX + ((sin _heading) * _noseOffset);
+                    private _noseY = _dotY - ((cos _heading) * _noseOffset);
                     _nose ctrlSetPosition [_noseX, _noseY, _noseSize, _noseSize];
                     _nose ctrlSetBackgroundColor _color;
                     _nose ctrlShow true;
@@ -340,6 +403,55 @@ PHEN_CS_fnc_CSS_updateHud = {
             };
         };
     } forEach _radarList;
+};
+
+PHEN_CS_fnc_CSS_getAimRay = {
+    params ["_unit", "_weapon"];
+
+    private _cameraASL = AGLToASL (positionCameraToWorld [0,0,0]);
+    private _cameraEndASL = AGLToASL (positionCameraToWorld [0,0,5000]);
+    private _cameraDir = vectorNormalized (_cameraEndASL vectorDiff _cameraASL);
+    if ((vectorMagnitude _cameraDir) <= 0.001) then { _cameraDir = vectorNormalized (getCameraViewDirection player); };
+
+    private _weaponVector = vectorNormalized (_unit weaponDirection _weapon);
+    if ((vectorMagnitude _weaponVector) > 0.001 && { (_weaponVector vectorDotProduct _cameraDir) < 0.35 }) then {
+        _cameraDir = _weaponVector;
+    };
+
+    [_cameraASL, _cameraDir, _weaponVector]
+};
+
+PHEN_CS_fnc_CSS_getZeroDistance = {
+    params ["_zeroing"];
+
+    private _zeroDistance = 100;
+    if ((typeName _zeroing) isEqualTo "ARRAY") then {
+        if ((count _zeroing) > 0) then { _zeroDistance = _zeroing # 0; };
+    } else {
+        if ((typeName _zeroing) isEqualTo "SCALAR") then { _zeroDistance = _zeroing; };
+    };
+
+    if (_zeroDistance <= 0) then { _zeroDistance = 100; };
+    _zeroDistance
+};
+
+PHEN_CS_fnc_CSS_applyZeroing = {
+    params ["_sightDir", "_speed", "_zeroDistance", "_gravityCoef"];
+
+    private _dir = vectorNormalized _sightDir;
+    if ((vectorMagnitude _dir) <= 0.001 || { _speed <= 0 } || { _zeroDistance <= 0 }) exitWith { _dir };
+
+    private _worldUp = [0,0,1];
+    private _right = _dir vectorCrossProduct _worldUp;
+    if ((vectorMagnitude _right) <= 0.001) then { _right = [1,0,0]; };
+    _right = vectorNormalized _right;
+    private _pitchUp = vectorNormalized (_right vectorCrossProduct _dir);
+
+    private _timeToZero = _zeroDistance / (_speed max 1);
+    private _dropAtZero = 0.5 * 9.81 * _gravityCoef * _timeToZero * _timeToZero;
+    private _lift = (_dropAtZero / (_zeroDistance max 1)) min 0.35;
+
+    vectorNormalized (_dir vectorAdd (_pitchUp vectorMultiply _lift))
 };
 
 PHEN_CS_fnc_CSS_updateAimPrediction = {
@@ -354,14 +466,15 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     if (_muzzle isEqualTo "") then { _muzzle = currentMuzzle _unit; };
     if (_magazine isEqualTo "") then { _magazine = currentMagazine _unit; };
     if (_weapon isEqualTo "" || { _ammoCount <= 0 }) exitWith { PHEN_CS_CSS_AimSolution = []; };
-    if !(_weapon in [primaryWeapon _unit, handgunWeapon _unit]) exitWith { PHEN_CS_CSS_AimSolution = []; };
+    if !(_weapon in [primaryWeapon _unit, handgunWeapon _unit, secondaryWeapon _unit]) exitWith { PHEN_CS_CSS_AimSolution = []; };
 
     private _zeroing = _unit currentZeroing [_weapon, _muzzle];
-    private _dir = vectorNormalized (_unit weaponDirection _weapon);
-    if ((vectorMagnitude _dir) <= 0.001) exitWith { PHEN_CS_CSS_AimSolution = []; };
+    private _zeroDistance = [_zeroing] call PHEN_CS_fnc_CSS_getZeroDistance;
+    private _aimRay = [_unit, _weapon] call PHEN_CS_fnc_CSS_getAimRay;
+    _aimRay params ["_startASL", "_sightDir", "_weaponDir"];
+    if ((vectorMagnitude _sightDir) <= 0.001) exitWith { PHEN_CS_CSS_AimSolution = []; };
 
-    private _startASL = (eyePos _unit) vectorAdd (_dir vectorMultiply 0.25);
-    private _endASL = _startASL vectorAdd (_dir vectorMultiply 5000);
+    private _endASL = _startASL vectorAdd (_sightDir vectorMultiply 5000);
     private _rayHits = lineIntersectsSurfaces [_startASL, _endASL, _unit, vehicle _unit, true, 1, "FIRE", "NONE", true];
     private _rayPosASL = if (_rayHits isEqualTo []) then { [] } else { (_rayHits # 0) # 0 };
 
@@ -383,7 +496,7 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         if (_rayPosASL isEqualTo []) then {
             PHEN_CS_CSS_AimSolution = [];
         } else {
-            PHEN_CS_CSS_AimSolution = [_rayPosASL, diag_tickTime + 0.35, "ray", "APPROX"];
+            PHEN_CS_CSS_AimSolution = [_rayPosASL, diag_tickTime + 0.35, "ray", "APPROX", _zeroDistance];
         };
     };
 
@@ -395,11 +508,13 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     private _gravityCoef = getNumber (_ammoCfg >> "coefGravity");
     if (_gravityCoef <= 0) then { _gravityCoef = 1; };
 
+    private _dir = [_sightDir, _speed, _zeroDistance, _gravityCoef] call PHEN_CS_fnc_CSS_applyZeroing;
     private _pos = _startASL;
     private _vel = _dir vectorMultiply _speed;
     private _hit = [];
+    private _maxSteps = (ceil (8 / _dt)) min 600;
 
-    for "_i" from 0 to 220 do {
+    for "_i" from 0 to _maxSteps do {
         private _speedNow = vectorMagnitude _vel;
         if (_airFriction < 0 && { _speedNow > 0 }) then {
             private _dragAccel = _airFriction * _speedNow * _speedNow;
@@ -415,12 +530,12 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     };
 
     if !(_hit isEqualTo []) then {
-        PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "ballistic", _label, _zeroing];
+        PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "ballistic", _label, _zeroDistance];
     } else {
         if (_rayPosASL isEqualTo []) then {
             PHEN_CS_CSS_AimSolution = [];
         } else {
-            PHEN_CS_CSS_AimSolution = [_rayPosASL, diag_tickTime + 0.35, "ray", "APPROX", _zeroing];
+            PHEN_CS_CSS_AimSolution = [_rayPosASL, diag_tickTime + 0.35, "ray", "APPROX", _zeroDistance];
         };
     };
 };
@@ -430,6 +545,9 @@ PHEN_CS_fnc_CSS_draw3D = {
 
     private _unit = call PHEN_CS_fnc_CSS_getUnit;
     private _contacts = PHEN_CS_CSS_FriendContacts select { !(isNull (_x # 0)) && { _unit distance (_x # 0) <= PHEN_CS_CSS_AllyRange } };
+    private _allyMarkerScale = ((missionNamespace getVariable ["PHEN_CS_CSS_AllyMarkerScale", 1]) max 0.25) min 2;
+    private _mineMarkerScale = ((missionNamespace getVariable ["PHEN_CS_CSS_MineMarkerScale", 1]) max 0.25) min 2;
+    private _hudScale = ((missionNamespace getVariable ["PHEN_CS_CSS_HudScale", 1]) max 0.5) min 2;
 
     {
         _x params ["_contact", "_posASL"];
@@ -438,10 +556,10 @@ PHEN_CS_fnc_CSS_draw3D = {
             if ([_unit, _contact, _posASL, PHEN_CS_CSS_AllyRange] call PHEN_CS_fnc_CSS_isMarkerVisible) then {
                 private _classData = [_contact] call PHEN_CS_fnc_CSS_classifyContact;
                 _classData params ["_classCode", "_icon", "_color", "_sizeFactor"];
-                private _size = (linearConversion [0, PHEN_CS_CSS_AllyRange, _distance, 0.95, 0.23, true]) * _sizeFactor;
+                private _size = (linearConversion [0, PHEN_CS_CSS_AllyRange, _distance, 0.95, 0.23, true]) * _sizeFactor * _allyMarkerScale;
                 private _label = [_contact] call PHEN_CS_fnc_CSS_getDisplayName;
                 private _text = format ["%1 %2 %3m", _classCode, _label, round _distance];
-                drawIcon3D [_icon, _color, ASLToAGL _posASL, _size, _size, 0, _text, 1, 0.028 * _size, "RobotoCondensed", "center"];
+                drawIcon3D [_icon, _color, ASLToAGL _posASL, _size, _size, 0, _text, 1, 0.028 * _size, "RobotoCondensed", "center", false];
             };
         };
     } forEach _contacts;
@@ -453,7 +571,8 @@ PHEN_CS_fnc_CSS_draw3D = {
                 private _classData = [_mine, true] call PHEN_CS_fnc_CSS_classifyContact;
                 _classData params ["_classCode", "_icon", "_color", "_sizeFactor"];
                 private _distance = round (_unit distance _mine);
-                drawIcon3D ["\a3\ui_f\data\map\markers\military\warning_ca.paa", _color, ASLToAGL _minePosASL, 0.75, 0.75, 0, format ["%1 %2 %3m", _classCode, "MINE", _distance], 1, 0.03, "RobotoCondensed", "center"];
+                private _mineSize = 0.75 * _mineMarkerScale;
+                drawIcon3D ["\a3\ui_f\data\map\markers\military\warning_ca.paa", _color, ASLToAGL _minePosASL, _mineSize, _mineSize, 0, format ["%1 %2 %3m", _classCode, "MINE", _distance], 1, 0.03 * _mineMarkerScale, "RobotoCondensed", "center", false];
             };
         };
     } forEach (PHEN_CS_CSS_MineContacts select { !(isNull (_x # 0)) && { _unit distance (_x # 0) <= PHEN_CS_CSS_MineRadius } });
@@ -461,9 +580,9 @@ PHEN_CS_fnc_CSS_draw3D = {
     private _solution = PHEN_CS_CSS_AimSolution;
     if !(_solution isEqualTo []) then {
         _solution params ["_impactPosASL", "_expiresAt", "_method", "_label"];
-        if (_expiresAt > diag_tickTime && { [_unit, objNull, _impactPosASL, 5000] call PHEN_CS_fnc_CSS_isMarkerVisible }) then {
+        if (_expiresAt > diag_tickTime && { [_unit, _impactPosASL, 5000] call PHEN_CS_fnc_CSS_isAimVisible }) then {
             private _color = if (_method isEqualTo "ballistic") then { [0.2,0.85,1,0.9] } else { [1,0.72,0.1,0.78] };
-            drawIcon3D ["\a3\ui_f\data\map\markers\military\destroy_ca.paa", _color, ASLToAGL _impactPosASL, 0.72, 0.72, 0, _label, 1, 0.032, "RobotoCondensed", "center"];
+            drawIcon3D ["\a3\ui_f\data\map\markers\military\destroy_ca.paa", _color, ASLToAGL _impactPosASL, 0.72 * _hudScale, 0.72 * _hudScale, 0, _label, 1, 0.032 * _hudScale, "RobotoCondensed", "center", false];
         };
     };
 };
