@@ -9,6 +9,7 @@ PHEN_CS_CSS_NearFOVDot = cos (PHEN_CS_CSS_NearFOVDegrees / 2);
 PHEN_CS_CSS_FarFOVDegrees = 90;
 PHEN_CS_CSS_FarFOVDot = cos (PHEN_CS_CSS_FarFOVDegrees / 2);
 PHEN_CS_CSS_RadarScaleLevels = [250,500,1000,2000];
+PHEN_CS_CSS_RadarRingFractions = [0.5,1];
 PHEN_CS_CSS_MinAimSolutionDistance = 15;
 PHEN_CS_CSS_MaxRadarContacts = 32;
 PHEN_CS_CSS_AimSolution = [];
@@ -243,6 +244,40 @@ PHEN_CS_fnc_CSS_getVitalsText = {
     format ["HR %1 | BP %2 | BLOOD %3%% | O2 %4", round _heartRate, _pressureText, _bloodPercent, _oxygenText]
 };
 
+PHEN_CS_fnc_CSS_updateRadarRings = {
+    params ["_centerX", "_centerY", "_radius", "_hudScale"];
+
+    private _parts = ["Top", "Bottom", "Left", "Right"];
+    private _line = (0.0012 * ((_hudScale max 0.7) min 1.3)) max 0.0008;
+
+    {
+        private _ringIndex = _forEachIndex;
+        private _fraction = _x;
+        private _half = _radius * _fraction;
+        private _size = _half * 2;
+        private _x0 = _centerX - _half;
+        private _y0 = _centerY - _half;
+        private _ringAlpha = if (_fraction >= 1) then { 0.26 } else { 0.14 };
+
+        {
+            private _ctrl = uiNamespace getVariable [format ["PHEN_CS_CSS_RadarRing_%1_%2", _ringIndex, _x], controlNull];
+            if (!isNull _ctrl) then {
+                private _pos = switch (_x) do {
+                    case "Top": { [_x0, _y0, _size, _line] };
+                    case "Bottom": { [_x0, _y0 + _size - _line, _size, _line] };
+                    case "Left": { [_x0, _y0, _line, _size] };
+                    default { [_x0 + _size - _line, _y0, _line, _size] };
+                };
+
+                _ctrl ctrlSetPosition _pos;
+                _ctrl ctrlSetBackgroundColor [0.2, 0.85, 1, _ringAlpha];
+                _ctrl ctrlShow true;
+                _ctrl ctrlCommit 0;
+            };
+        } forEach _parts;
+    } forEach PHEN_CS_CSS_RadarRingFractions;
+};
+
 PHEN_CS_fnc_CSS_ensureHud = {
     if (!isNull (uiNamespace getVariable ["PHEN_CS_CSS_BGCtrl", controlNull])) exitWith {};
 
@@ -268,6 +303,18 @@ PHEN_CS_fnc_CSS_ensureHud = {
     _center ctrlSetBackgroundColor [0.2, 0.85, 1, 0.9];
     _center ctrlCommit 0;
 
+    {
+        private _ringIndex = _forEachIndex;
+        {
+            private _ring = _display ctrlCreate ["RscText", -1];
+            _ring ctrlSetPosition [_centerX, _centerY, 0, 0];
+            _ring ctrlSetBackgroundColor [0.2, 0.85, 1, 0.12];
+            _ring ctrlShow false;
+            _ring ctrlCommit 0;
+            uiNamespace setVariable [format ["PHEN_CS_CSS_RadarRing_%1_%2", _ringIndex, _x], _ring];
+        } forEach ["Top", "Bottom", "Left", "Right"];
+    } forEach PHEN_CS_CSS_RadarRingFractions;
+
     for "_i" from 0 to (PHEN_CS_CSS_MaxRadarContacts - 1) do {
         private _dot = _display ctrlCreate ["RscPictureKeepAspect", -1];
         _dot ctrlSetPosition [_centerX, _centerY, _dotBase, _dotBase];
@@ -276,14 +323,6 @@ PHEN_CS_fnc_CSS_ensureHud = {
         _dot ctrlShow false;
         _dot ctrlCommit 0;
         uiNamespace setVariable [format ["PHEN_CS_CSS_RadarDot_%1", _i], _dot];
-
-        private _nose = _display ctrlCreate ["RscPictureKeepAspect", -1];
-        _nose ctrlSetPosition [_centerX, _centerY, _dotBase * 0.65, _dotBase * 0.65];
-        _nose ctrlSetText "\a3\ui_f\data\map\markers\military\arrow2_ca.paa";
-        _nose ctrlSetTextColor [0.9, 1, 0.95, 0.9];
-        _nose ctrlShow false;
-        _nose ctrlCommit 0;
-        uiNamespace setVariable [format ["PHEN_CS_CSS_RadarNose_%1", _i], _nose];
     };
 
     uiNamespace setVariable ["PHEN_CS_CSS_BGCtrl", _bg];
@@ -298,13 +337,21 @@ PHEN_CS_fnc_CSS_deleteHud = {
         uiNamespace setVariable [_x, nil];
     } forEach ["PHEN_CS_CSS_BGCtrl", "PHEN_CS_CSS_TextCtrl", "PHEN_CS_CSS_CenterCtrl"];
 
-    for "_i" from 0 to (PHEN_CS_CSS_MaxRadarContacts - 1) do {
+    {
+        private _ringIndex = _forEachIndex;
         {
-            private _key = format [_x, _i];
+            private _key = format ["PHEN_CS_CSS_RadarRing_%1_%2", _ringIndex, _x];
             private _ctrl = uiNamespace getVariable [_key, controlNull];
             if (!isNull _ctrl) then { ctrlDelete _ctrl; };
             uiNamespace setVariable [_key, nil];
-        } forEach ["PHEN_CS_CSS_RadarDot_%1", "PHEN_CS_CSS_RadarNose_%1"];
+        } forEach ["Top", "Bottom", "Left", "Right"];
+    } forEach PHEN_CS_CSS_RadarRingFractions;
+
+    for "_i" from 0 to (PHEN_CS_CSS_MaxRadarContacts - 1) do {
+        private _key = format ["PHEN_CS_CSS_RadarDot_%1", _i];
+        private _ctrl = uiNamespace getVariable [_key, controlNull];
+        if (!isNull _ctrl) then { ctrlDelete _ctrl; };
+        uiNamespace setVariable [_key, nil];
     };
 };
 
@@ -358,13 +405,12 @@ PHEN_CS_fnc_CSS_updateHud = {
         _centerCtrl ctrlSetPosition [_centerX - (0.003 * _hudScale), _centerY - (0.003 * _hudScale), 0.006 * _hudScale, 0.006 * _hudScale];
         _centerCtrl ctrlCommit 0;
     };
+    [_centerX, _centerY, _radius, _hudScale] call PHEN_CS_fnc_CSS_updateRadarRings;
     private _bearing = getDirVisual _unit;
 
     for "_i" from 0 to (PHEN_CS_CSS_MaxRadarContacts - 1) do {
         private _dot = uiNamespace getVariable [format ["PHEN_CS_CSS_RadarDot_%1", _i], controlNull];
         if (!isNull _dot) then { _dot ctrlShow false; };
-        private _nose = uiNamespace getVariable [format ["PHEN_CS_CSS_RadarNose_%1", _i], controlNull];
-        if (!isNull _nose) then { _nose ctrlShow false; };
     };
 
     private _radarList = [];
@@ -384,14 +430,14 @@ PHEN_CS_fnc_CSS_updateHud = {
 
         if (_forEachIndex < PHEN_CS_CSS_MaxRadarContacts) then {
             private _dot = uiNamespace getVariable [format ["PHEN_CS_CSS_RadarDot_%1", _forEachIndex], controlNull];
-            private _nose = uiNamespace getVariable [format ["PHEN_CS_CSS_RadarNose_%1", _forEachIndex], controlNull];
             if (!isNull _dot) then {
-                private _dir = _unit getDir _contact;
-                private _angle = (_dir - _bearing) * 0.0174533;
+                private _relativeBearing = (_unit getDir _contact) - _bearing;
+                private _angle = _relativeBearing * 0.0174533;
                 private _scaled = (_distance / _radarRange) min 1;
-                private _dotX = _centerX + ((sin _angle) * _scaled * _radius);
-                private _dotY = _centerY - ((cos _angle) * _scaled * _radius);
                 private _dotSize = (_dotBase + (_dotBase * _sizeFactor)) max 0.012;
+                private _iconRadius = (_radius - (_dotSize * 0.55)) max (_radius * 0.2);
+                private _dotX = _centerX + ((sin _angle) * _scaled * _iconRadius);
+                private _dotY = _centerY - ((cos _angle) * _scaled * _iconRadius);
                 private _headingAngle = (getDirVisual _contact) - _bearing;
                 _dot ctrlSetText _icon;
                 _dot ctrlSetTextColor _color;
@@ -399,18 +445,6 @@ PHEN_CS_fnc_CSS_updateHud = {
                 _dot ctrlSetPosition [_dotX - (_dotSize * 0.5), _dotY - (_dotSize * 0.5), _dotSize, _dotSize];
                 _dot ctrlShow true;
                 _dot ctrlCommit 0;
-
-                if (!isNull _nose) then {
-                    private _heading = _headingAngle * 0.0174533;
-                    private _noseSize = _dotSize * 0.5;
-                    private _noseX = _dotX + ((sin _heading) * _noseOffset);
-                    private _noseY = _dotY - ((cos _heading) * _noseOffset);
-                    _nose ctrlSetTextColor _color;
-                    _nose ctrlSetAngle [_headingAngle, 0.5, 0.5];
-                    _nose ctrlSetPosition [_noseX - (_noseSize * 0.5), _noseY - (_noseSize * 0.5), _noseSize, _noseSize];
-                    _nose ctrlShow true;
-                    _nose ctrlCommit 0;
-                };
             };
         };
     } forEach _radarList;
