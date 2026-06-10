@@ -958,6 +958,41 @@ PHEN_CS_fnc_CSS_logAimDebug = {
 
     PHEN_CS_CSS_AimDebugLastLog = diag_tickTime;
     diag_log format ["[PHEN_CS][ArgusAim] %1 | %2", _reason, _data];
+    [_reason, _data] call PHEN_CS_fnc_CSS_logAimCorrectionDebug;
+    false
+};
+
+PHEN_CS_fnc_CSS_logAimCorrectionDebug = {
+    params [["_reason", ""], ["_data", []]];
+
+    private _correction = [_data, "correction", []] call PHEN_CS_fnc_CSS_getPairValue;
+    if !(_correction isEqualType []) exitWith { false };
+    if (_correction isEqualTo []) exitWith { false };
+
+    diag_log format ["[PHEN_CS][ArgusAimCorrection] %1 | %2", _reason, [
+        ["weapon", [_data, "weapon", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["mode", [_data, "mode", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["ammo", [_data, "ammo", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["zeroDistance", [_data, "zeroDistance", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["calibrationApplied", [_correction, "calibrationApplied", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["calibrationSourceZeroDistance", [_correction, "calibrationSourceZeroDistance", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["activeZeroDistance", [_correction, "activeZeroDistance", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["calibrationSharedAcrossZeroing", [_correction, "calibrationSharedAcrossZeroing", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["calibrationBiasMagnitude", [_correction, "calibrationBiasMagnitude", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["correctionDeltaASL", [_correction, "correctionDeltaASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["correctionDistance", [_correction, "correctionDistance", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["correctionDirectionError", [_correction, "correctionDirectionError", []] call PHEN_CS_fnc_CSS_getPairValue]
+    ]];
+    diag_log format ["[PHEN_CS][ArgusAimCorrectionPoints] %1 | %2", _reason, [
+        ["weapon", [_data, "weapon", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["mode", [_data, "mode", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["ammo", [_data, "ammo", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["zeroDistance", [_data, "zeroDistance", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["preCorrectionAimPointASL", [_correction, "preCorrectionAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["postCorrectionAimPointASL", [_correction, "postCorrectionAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["preCorrectionHitReason", [_correction, "preCorrectionHitReason", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["postCorrectionHitReason", [_correction, "postCorrectionHitReason", ""] call PHEN_CS_fnc_CSS_getPairValue]
+    ]];
     false
 };
 
@@ -1169,6 +1204,62 @@ PHEN_CS_fnc_CSS_shouldReportPredictionError = {
     ((_impactEvaluation # _scoreableIdx) # 1) && { ((_impactEvaluation # _usableIdx) # 1) }
 };
 
+PHEN_CS_fnc_CSS_logPostShotImpactDebug = {
+    params [["_reason", ""], ["_data", []]];
+
+    private _preShotCorrection = [_data, "preShotCorrection", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _prediction = [_data, "prediction", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _predictionZeroDistance = -1;
+    if (_prediction isEqualType [] && { (count _prediction) > 4 }) then {
+        _predictionZeroDistance = _prediction # 4;
+    };
+    private _zeroDistance = [_data, "zeroDistance", _predictionZeroDistance] call PHEN_CS_fnc_CSS_getPairValue;
+    private _impactEvaluation = [_data, "impactEvaluation", []] call PHEN_CS_fnc_CSS_getPairValue;
+
+    diag_log format ["[PHEN_CS][ArgusShotCorrection] %1 | %2", _reason, [
+        ["weapon", [_data, "weapon", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["mode", [_data, "mode", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["ammo", [_data, "ammo", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["zeroDistance", _zeroDistance],
+        ["calibrationApplied", [_preShotCorrection, "calibrationApplied", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["calibrationSourceZeroDistance", [_preShotCorrection, "calibrationSourceZeroDistance", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["activeZeroDistance", [_preShotCorrection, "activeZeroDistance", _zeroDistance] call PHEN_CS_fnc_CSS_getPairValue],
+        ["calibrationSharedAcrossZeroing", [_preShotCorrection, "calibrationSharedAcrossZeroing", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["preShotCorrectionDistance", [_data, "preShotCorrectionDistance", [_preShotCorrection, "correctionDistance", -1] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["preShotCorrectionDeltaASL", [_data, "preShotCorrectionDeltaASL", [_preShotCorrection, "correctionDeltaASL", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["correctionDistance", [_preShotCorrection, "correctionDistance", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["correctionDeltaASL", [_preShotCorrection, "correctionDeltaASL", []] call PHEN_CS_fnc_CSS_getPairValue]
+    ]];
+    diag_log format ["[PHEN_CS][ArgusShotCorrectionPoints] %1 | %2", _reason, [
+        ["weapon", [_data, "weapon", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["mode", [_data, "mode", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["ammo", [_data, "ammo", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["zeroDistance", _zeroDistance],
+        ["preShotUncorrectedAimPointASL", [_data, "preShotUncorrectedAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["preShotCorrectedAimPointASL", [_data, "preShotCorrectedAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["preCorrectionAimPointASL", [_preShotCorrection, "preCorrectionAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["postCorrectionAimPointASL", [_preShotCorrection, "postCorrectionAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue]
+    ]];
+
+    diag_log format ["[PHEN_CS][ArgusShotImpact] %1 | %2", _reason, [
+        ["weapon", [_data, "weapon", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["mode", [_data, "mode", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["ammo", [_data, "ammo", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["zeroDistance", _zeroDistance],
+        ["preShotCorrectedAimPointASL", [_data, "preShotCorrectedAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["postShotImpactPointASL", [_data, "postShotImpactPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["impactVsCorrectedError", [_data, "impactVsCorrectedError", -1] call PHEN_CS_fnc_CSS_getPairValue],
+        ["impactVsCorrectedVectorASL", [_data, "impactVsCorrectedVectorASL", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["predictionErrorUsable", [_data, "predictionErrorUsable", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["impactKind", [_impactEvaluation, "impactKind", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["impactReason", [_impactEvaluation, "reason", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["impactScoreable", [_impactEvaluation, "scoreable", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["impactUsable", [_impactEvaluation, "usable", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["impactDistanceFromTraceEnd", [_data, "impactDistanceFromTraceEnd", -1] call PHEN_CS_fnc_CSS_getPairValue]
+    ]];
+    false
+};
+
 PHEN_CS_fnc_CSS_logPostShotDebug = {
     params [["_reason", ""], ["_data", []]];
 
@@ -1177,6 +1268,7 @@ PHEN_CS_fnc_CSS_logPostShotDebug = {
 
     PHEN_CS_CSS_PostShotDebugLastLog = diag_tickTime;
     diag_log format ["[PHEN_CS][ArgusShot] %1 | %2", _reason, _data];
+    [_reason, _data] call PHEN_CS_fnc_CSS_logPostShotImpactDebug;
     false
 };
 
