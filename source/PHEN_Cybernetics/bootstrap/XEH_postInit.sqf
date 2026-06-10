@@ -714,6 +714,64 @@ PHEN_CS_fnc_CSS_allowRayFallback = {
     (_reason isEqualTo "zero_speed") && { (_rayStatus # 0) }
 };
 
+PHEN_CS_fnc_CSS_traceAimTrajectory = {
+    params ["_unit", "_ammoCfg", "_aimFrame", "_speed", "_airFriction", "_gravityCoef", "_timeToLive", "_projectileFamily", "_rocketData"];
+
+    if (isNull _unit || { (count _aimFrame) < 2 }) exitWith { [[], "invalid_aim_frame", [], [], 0] };
+    _aimFrame params ["_startASL", "_sightDir"];
+    if !(_startASL isEqualType [] && { (count _startASL) >= 3 }) exitWith { [[], "invalid_start", [], [], 0] };
+    if !(_sightDir isEqualType [] && { (count _sightDir) >= 3 } && { (vectorMagnitude _sightDir) > 0.001 }) exitWith { [[], "invalid_direction", [], [], 0] };
+
+    private _dt = getNumber (_ammoCfg >> "simulationStep");
+    if (_dt <= 0) then { _dt = 0.025; };
+    _dt = (_dt max 0.01) min 0.05;
+
+    private _dir = vectorNormalized _sightDir;
+    private _pos = _startASL;
+    private _vel = _dir vectorMultiply _speed;
+    private _hit = [];
+    private _hitReason = "no_intersection";
+    private _maxSteps = (ceil (_timeToLive / _dt)) min 900;
+    private _i = 0;
+
+    while { _i <= _maxSteps && { _hit isEqualTo [] } && { (_startASL distance _pos) <= 5000 } } do {
+        private _elapsed = _i * _dt;
+        private _speedNow = vectorMagnitude _vel;
+        if (_projectileFamily isEqualTo "rocket") then {
+            private _rocketAccelData = [_dir, _vel, _elapsed, _rocketData, _airFriction] call PHEN_CS_fnc_CSS_getRocketAccel;
+            _rocketAccelData params ["_rocketAccel", "_rocketMaxSpeed"];
+            _vel = _vel vectorAdd (_rocketAccel vectorMultiply _dt);
+            if (_rocketMaxSpeed > 0 && { (vectorMagnitude _vel) > _rocketMaxSpeed }) then {
+                _vel = (vectorNormalized _vel) vectorMultiply _rocketMaxSpeed;
+            };
+        } else {
+            if (_airFriction != 0 && { _speedNow > 0 }) then {
+                private _dragAccel = _vel vectorMultiply (_speedNow * _airFriction);
+                _vel = _vel vectorAdd (_dragAccel vectorMultiply _dt);
+            };
+        };
+
+        _vel = _vel vectorAdd [0,0,(-9.81 * _gravityCoef * _dt)];
+        private _next = _pos vectorAdd (_vel vectorMultiply _dt);
+        private _segHits = lineIntersectsSurfaces [_pos, _next, _unit, vehicle _unit, true, 1, "FIRE", "GEOM", true];
+        if !(_segHits isEqualTo []) then {
+            private _hitStatus = [_startASL, _segHits # 0] call PHEN_CS_fnc_CSS_getAimHitStatus;
+            if (_hitStatus # 0) then {
+                _hitReason = _hitStatus # 1;
+                _hit = _segHits # 0;
+            } else {
+                _hitReason = _hitStatus # 1;
+                _pos = _next;
+            };
+        } else {
+            _pos = _next;
+        };
+        _i = _i + 1;
+    };
+
+    [_hit, _hitReason, _pos, _vel, _i]
+};
+
 PHEN_CS_fnc_CSS_getZeroDistance = {
     params ["_zeroing"];
 
@@ -731,7 +789,7 @@ PHEN_CS_fnc_CSS_getZeroDistance = {
 PHEN_CS_fnc_CSS_getShotCalibrationKey = {
     params ["_weapon", "_muzzle", "_mode", "_magazine", "_ammo", "_zeroDistance", "_stanceName"];
 
-    format ["%1|%2|%3|%4|%5|%6|%7", _weapon, _muzzle, _mode, _magazine, _ammo, round _zeroDistance, _stanceName]
+    format ["%1|%2|%3|%4|%5|%6", _weapon, _muzzle, _mode, _magazine, _ammo, _stanceName]
 };
 
 PHEN_CS_fnc_CSS_getShotCalibration = {
@@ -740,6 +798,27 @@ PHEN_CS_fnc_CSS_getShotCalibration = {
     private _idx = PHEN_CS_CSS_ShotCalibration findIf { (_x # 0) isEqualTo _key };
     if (_idx < 0) exitWith { [] };
     (PHEN_CS_CSS_ShotCalibration # _idx) # 1
+};
+
+PHEN_CS_fnc_CSS_getPairValue = {
+    params [["_pairs", []], ["_key", ""], ["_defaultValue", []]];
+
+    if !(_pairs isEqualType []) exitWith { _defaultValue };
+    private _idx = _pairs findIf { (_x isEqualType []) && { (count _x) >= 2 } && { (_x # 0) isEqualTo _key } };
+    if (_idx < 0) exitWith { _defaultValue };
+
+    (_pairs # _idx) # 1
+};
+
+PHEN_CS_fnc_CSS_getAimSolutionMeta = {
+    params [["_solution", []]];
+
+    if !(_solution isEqualType []) exitWith { [] };
+    if ((count _solution) <= 5) exitWith { [] };
+    private _meta = _solution # 5;
+    if !(_meta isEqualType []) exitWith { [] };
+
+    _meta
 };
 
 PHEN_CS_fnc_CSS_measureDirectionError = {
@@ -772,8 +851,9 @@ PHEN_CS_fnc_CSS_storeShotCalibration = {
     private _actualDir = vectorNormalized _projectileVelocity;
     private _dirError = [_predictedDir, _actualDir] call PHEN_CS_fnc_CSS_measureDirectionError;
     _dirError params ["_angleDeg", "_lateralBias", "_verticalBias", "_dot"];
+    private _biasMagnitude = sqrt ((_lateralBias * _lateralBias) + (_verticalBias * _verticalBias));
 
-    private _value = [_originLocal, _lateralBias, _verticalBias, _angleDeg, _dot, vectorMagnitude _projectileVelocity, diag_tickTime, _key, _baseMode];
+    private _value = [_originLocal, _lateralBias, _verticalBias, _angleDeg, _dot, vectorMagnitude _projectileVelocity, diag_tickTime, _key, _baseMode, _zeroDistance, _biasMagnitude];
     private _idx = PHEN_CS_CSS_ShotCalibration findIf { (_x # 0) isEqualTo _key };
     if (_idx >= 0) then {
         PHEN_CS_CSS_ShotCalibration set [_idx, [_key, _value]];
@@ -915,7 +995,8 @@ PHEN_CS_fnc_CSS_getAimDebugPayload = {
         ["_attachmentCoefs", []],
         ["_hitReason", ""],
         ["_extra", []],
-        ["_predictionQuality", ""]
+        ["_predictionQuality", ""],
+        ["_correctionTelemetry", []]
     ];
 
     private _originASL = [];
@@ -966,6 +1047,7 @@ PHEN_CS_fnc_CSS_getAimDebugPayload = {
         ["attachmentCoefs", _attachmentCoefs],
         ["predictionQuality", _predictionQuality],
         ["hitReason", _hitReason],
+        ["correction", _correctionTelemetry],
         ["extra", _extra]
     ]
 };
@@ -1113,6 +1195,11 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
     if !(_unit isEqualTo (call PHEN_CS_fnc_CSS_getUnit)) exitWith { false };
 
     private _prediction = +PHEN_CS_CSS_AimSolution;
+    private _predictionMeta = [_prediction] call PHEN_CS_fnc_CSS_getAimSolutionMeta;
+    private _preShotCorrectedAimPointASL = if (_prediction isEqualType [] && { (count _prediction) > 0 }) then { _prediction # 0 } else { [] };
+    private _preShotUncorrectedAimPointASL = [_predictionMeta, "preCorrectionAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _preShotCorrectionDistance = [_predictionMeta, "correctionDistance", -1] call PHEN_CS_fnc_CSS_getPairValue;
+    private _preShotCorrectionDeltaASL = [_predictionMeta, "correctionDeltaASL", []] call PHEN_CS_fnc_CSS_getPairValue;
     private _projectileStartASL = if (isNull _projectile) then { [] } else { getPosASL _projectile };
     private _projectileVelocity = if (isNull _projectile) then { [] } else { velocity _projectile };
     private _shotInfo = if (isNull _projectile) then { [] } else { getShotInfo _projectile };
@@ -1173,6 +1260,11 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
         ["predictionQuality", _predictionQuality],
         ["zeroing", _zeroing],
         ["zeroDistance", _zeroDistance],
+        ["preShotUncorrectedAimPointASL", _preShotUncorrectedAimPointASL],
+        ["preShotCorrectedAimPointASL", _preShotCorrectedAimPointASL],
+        ["preShotCorrectionDistance", _preShotCorrectionDistance],
+        ["preShotCorrectionDeltaASL", _preShotCorrectionDeltaASL],
+        ["preShotCorrection", _predictionMeta],
         ["rawAimFrame", _rawAimFrame],
         ["zeroedAimFrame", _zeroedAimFrame],
         ["rawDirectionError", _rawDirectionError],
@@ -1211,6 +1303,9 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
         };
 
         private _predictedASL = if (_prediction isEqualType [] && { (count _prediction) > 0 }) then { _prediction # 0 } else { [] };
+        private _predictionMeta = [_prediction] call PHEN_CS_fnc_CSS_getAimSolutionMeta;
+        private _preShotUncorrectedAimPointASL = [_predictionMeta, "preCorrectionAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue;
+        private _preShotCorrectedAimPointASL = _predictedASL;
         private _impactPosASL = [PHEN_CS_CSS_LastProjectileImpactState] call PHEN_CS_fnc_CSS_getImpactEventPosition;
         private _impactDistanceFromTraceEnd = -1;
         if (_impactPosASL isEqualType [] && { (count _impactPosASL) >= 3 } && { _lastASL isEqualType [] } && { (count _lastASL) >= 3 }) then {
@@ -1224,6 +1319,10 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
         if (_predictionErrorUsable && { _predictedASL isEqualType [] } && { (count _predictedASL) >= 3 } && { _predictionErrorTargetASL isEqualType [] } && { (count _predictionErrorTargetASL) >= 3 }) then {
             _predictionError = _predictedASL distance _predictionErrorTargetASL;
         };
+        private _impactVsCorrectedVectorASL = [];
+        if (_predictionErrorUsable && { _predictedASL isEqualType [] } && { (count _predictedASL) >= 3 } && { _predictionErrorTargetASL isEqualType [] } && { (count _predictionErrorTargetASL) >= 3 }) then {
+            _impactVsCorrectedVectorASL = _predictionErrorTargetASL vectorAdd (_predictedASL vectorMultiply -1);
+        };
 
         ["trace_end", [
             ["weapon", _weapon],
@@ -1234,8 +1333,14 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
             ["lastASL", _lastASL],
             ["lastVelocity", _lastVelocity],
             ["prediction", _prediction],
+            ["preShotUncorrectedAimPointASL", _preShotUncorrectedAimPointASL],
+            ["preShotCorrectedAimPointASL", _preShotCorrectedAimPointASL],
+            ["postShotImpactPointASL", _predictionErrorTargetASL],
             ["predictionError", _predictionError],
             ["predictionErrorTargetASL", _predictionErrorTargetASL],
+            ["impactVsCorrectedError", _predictionError],
+            ["impactVsCorrectedVectorASL", _impactVsCorrectedVectorASL],
+            ["preShotCorrection", _predictionMeta],
             ["impactEvaluation", _impactEvaluation],
             ["predictionErrorUsable", _predictionErrorUsable],
             ["impactPosASL", _impactPosASL],
@@ -1280,17 +1385,31 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
 
     private _calibrationKey = [_weapon, _muzzle, _mode, _magazine, _ammo, _zeroDistance, stance _unit] call PHEN_CS_fnc_CSS_getShotCalibrationKey;
     private _calibration = [_calibrationKey] call PHEN_CS_fnc_CSS_getShotCalibration;
+    private _calibrationApplied = !(_calibration isEqualTo []);
+    private _calibrationSourceZeroDistance = if ((count _calibration) > 9) then { _calibration # 9 } else { -1 };
+    private _calibrationBiasMagnitude = if ((count _calibration) > 10) then { _calibration # 10 } else { -1 };
     _speed = [_speed, _calibration] call PHEN_CS_fnc_CSS_applySpeedCalibration;
 
     private _applyZeroing = [_unit, _weapon, _muzzle, _mode, _magazine, _ammo] call PHEN_CS_fnc_CSS_shouldApplyZeroing;
     _applyZeroing = [_calibration, _applyZeroing] call PHEN_CS_fnc_CSS_calibrationWantsZeroing;
 
     private _aimFrame = [_unit, _weapon, _speed, _zeroDistance, _gravityCoef, _applyZeroing] call PHEN_CS_fnc_CSS_getAimFrame;
-    if !(_calibration isEqualTo []) then {
+    private _preCorrectionAimFrame = +_aimFrame;
+    if (_calibrationApplied) then {
         _aimFrame = [_unit, _aimFrame, _calibration] call PHEN_CS_fnc_CSS_applyAimCalibration;
     };
     _aimFrame params ["_startASL", "_sightDir", "_weaponDir", "_viewDir", "_originMethod", "_dirMethod", "_fromWeapon", "_zeroingApplied", "_viewCoherence"];
     if ((vectorMagnitude _sightDir) <= 0.001) exitWith { ["invalid_aim_frame", [_weapon, _weaponDir, _viewDir, _originMethod, _dirMethod]] call PHEN_CS_fnc_CSS_clearAimSolution; };
+
+    private _debugCorrection = missionNamespace getVariable ["PHEN_CS_DebugMode", false];
+    private _preCorrectionHit = [];
+    private _preCorrectionHitReason = "not_traced";
+    private _preCorrectionAimPointASL = [];
+    private _postCorrectionAimPointASL = [];
+    private _correctionDeltaASL = [];
+    private _correctionDistance = -1;
+    private _correctionDirectionError = [-1, 0, 0, 0];
+    private _correctionTelemetry = [];
 
     private _endASL = _startASL vectorAdd (_sightDir vectorMultiply 5000);
     private _rayHits = lineIntersectsSurfaces [_startASL, _endASL, _unit, vehicle _unit, true, 1, "FIRE", "GEOM", true];
@@ -1318,66 +1437,70 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         };
     };
 
-    private _dt = getNumber (_ammoCfg >> "simulationStep");
-    if (_dt <= 0) then { _dt = 0.025; };
-    _dt = (_dt max 0.01) min 0.05;
-
-    private _dir = _sightDir;
-    private _pos = _startASL;
-    private _vel = _dir vectorMultiply _speed;
-    private _hit = [];
-    private _hitReason = "no_intersection";
-    private _maxSteps = (ceil (_timeToLive / _dt)) min 900;
-
-    private _i = 0;
-    while { _i <= _maxSteps && { _hit isEqualTo [] } && { (_startASL distance _pos) <= 5000 } } do {
-        private _elapsed = _i * _dt;
-        private _speedNow = vectorMagnitude _vel;
-        if (_projectileFamily isEqualTo "rocket") then {
-            private _rocketAccelData = [_dir, _vel, _elapsed, _rocketData, _airFriction] call PHEN_CS_fnc_CSS_getRocketAccel;
-            _rocketAccelData params ["_rocketAccel", "_rocketMaxSpeed"];
-            _vel = _vel vectorAdd (_rocketAccel vectorMultiply _dt);
-            if (_rocketMaxSpeed > 0 && { (vectorMagnitude _vel) > _rocketMaxSpeed }) then {
-                _vel = (vectorNormalized _vel) vectorMultiply _rocketMaxSpeed;
-            };
-        } else {
-            if (_airFriction != 0 && { _speedNow > 0 }) then {
-            private _dragAccel = _vel vectorMultiply (_speedNow * _airFriction);
-            _vel = _vel vectorAdd (_dragAccel vectorMultiply _dt);
-            };
+    if (_debugCorrection && { _calibrationApplied }) then {
+        private _preTrace = [_unit, _ammoCfg, _preCorrectionAimFrame, _speed, _airFriction, _gravityCoef, _timeToLive, _projectileFamily, _rocketData] call PHEN_CS_fnc_CSS_traceAimTrajectory;
+        _preTrace params ["_preHit", "_preHitReason"];
+        _preCorrectionHit = _preHit;
+        _preCorrectionHitReason = _preHitReason;
+        if !(_preCorrectionHit isEqualTo []) then {
+            _preCorrectionAimPointASL = _preCorrectionHit # 0;
         };
-
-        _vel = _vel vectorAdd [0,0,(-9.81 * _gravityCoef * _dt)];
-        private _next = _pos vectorAdd (_vel vectorMultiply _dt);
-        private _segHits = lineIntersectsSurfaces [_pos, _next, _unit, vehicle _unit, true, 1, "FIRE", "GEOM", true];
-        if !(_segHits isEqualTo []) then {
-            private _hitStatus = [_startASL, _segHits # 0] call PHEN_CS_fnc_CSS_getAimHitStatus;
-            if (_hitStatus # 0) then {
-                _hitReason = _hitStatus # 1;
-                _hit = _segHits # 0;
-            } else {
-                _hitReason = _hitStatus # 1;
-                _pos = _next;
-            };
-        } else {
-            _pos = _next;
-        };
-        _i = _i + 1;
     };
+
+    private _trace = [_unit, _ammoCfg, _aimFrame, _speed, _airFriction, _gravityCoef, _timeToLive, _projectileFamily, _rocketData] call PHEN_CS_fnc_CSS_traceAimTrajectory;
+    _trace params ["_hit", "_hitReason", "_traceEndASL", "_traceEndVelocity", "_traceSteps"];
+
+    if !(_hit isEqualTo []) then {
+        _postCorrectionAimPointASL = _hit # 0;
+        if !(_calibrationApplied) then {
+            _preCorrectionAimPointASL = _postCorrectionAimPointASL;
+            _preCorrectionHitReason = _hitReason;
+        };
+    };
+
+    if (_preCorrectionAimPointASL isEqualType [] && { (count _preCorrectionAimPointASL) >= 3 } && { _postCorrectionAimPointASL isEqualType [] } && { (count _postCorrectionAimPointASL) >= 3 }) then {
+        _correctionDeltaASL = _postCorrectionAimPointASL vectorAdd (_preCorrectionAimPointASL vectorMultiply -1);
+        _correctionDistance = _preCorrectionAimPointASL distance _postCorrectionAimPointASL;
+    };
+    if ((count _preCorrectionAimFrame) >= 2 && { (count _aimFrame) >= 2 }) then {
+        _correctionDirectionError = [_preCorrectionAimFrame # 1, _aimFrame # 1] call PHEN_CS_fnc_CSS_measureDirectionError;
+    };
+
+    _correctionTelemetry = [
+        ["calibrationKey", _calibrationKey],
+        ["calibration", _calibration],
+        ["calibrationApplied", _calibrationApplied],
+        ["calibrationSourceZeroDistance", _calibrationSourceZeroDistance],
+        ["activeZeroDistance", _zeroDistance],
+        ["calibrationSharedAcrossZeroing", true],
+        ["calibrationBiasMagnitude", _calibrationBiasMagnitude],
+        ["preCorrectionAimFrame", _preCorrectionAimFrame],
+        ["postCorrectionAimFrame", _aimFrame],
+        ["preCorrectionAimPointASL", _preCorrectionAimPointASL],
+        ["postCorrectionAimPointASL", _postCorrectionAimPointASL],
+        ["preCorrectionHitReason", _preCorrectionHitReason],
+        ["postCorrectionHitReason", _hitReason],
+        ["traceEndASL", _traceEndASL],
+        ["traceEndVelocity", _traceEndVelocity],
+        ["traceSteps", _traceSteps],
+        ["correctionDeltaASL", _correctionDeltaASL],
+        ["correctionDistance", _correctionDistance],
+        ["correctionDirectionError", _correctionDirectionError]
+    ];
 
     if !(_hit isEqualTo []) then {
         if (_projectileFamily isEqualTo "rocket") then {
             private _rocketMethod = "rocket_approx";
-            PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "rocket", _label, _zeroDistance];
-            private _payload = [_rocketMethod, _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality] call PHEN_CS_fnc_CSS_getAimDebugPayload;
+            PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "rocket", _label, _zeroDistance, _correctionTelemetry];
+            private _payload = [_rocketMethod, _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
             [_rocketMethod, _payload] call PHEN_CS_fnc_CSS_setAimDebugState;
         } else {
-            PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "ballistic", _label, _zeroDistance];
-            private _payload = ["ballistic_hit", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality] call PHEN_CS_fnc_CSS_getAimDebugPayload;
+            PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "ballistic", _label, _zeroDistance, _correctionTelemetry];
+            private _payload = ["ballistic_hit", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
             ["ballistic_hit", _payload] call PHEN_CS_fnc_CSS_setAimDebugState;
         };
     } else {
-        private _payload = ["no_ballistic_hit", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, [["rayStatus", _rayStatus], ["rayHits", _rayHits]], _predictionQuality] call PHEN_CS_fnc_CSS_getAimDebugPayload;
+        private _payload = ["no_ballistic_hit", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, [["rayStatus", _rayStatus], ["rayHits", _rayHits]], _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
         ["no_ballistic_hit", _payload] call PHEN_CS_fnc_CSS_clearAimSolution;
     };
 };
