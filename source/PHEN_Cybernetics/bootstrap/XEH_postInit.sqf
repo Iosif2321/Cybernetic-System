@@ -1219,9 +1219,10 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
 
         private _impactEvaluation = [PHEN_CS_CSS_LastProjectileImpactState, _prediction, _lastASL] call PHEN_CS_fnc_CSS_getImpactEvaluation;
         private _predictionErrorUsable = [_impactEvaluation] call PHEN_CS_fnc_CSS_shouldReportPredictionError;
+        private _predictionErrorTargetASL = if (_impactPosASL isEqualType [] && { (count _impactPosASL) >= 3 }) then { _impactPosASL } else { _lastASL };
         private _predictionError = -1;
-        if (_predictionErrorUsable && { _predictedASL isEqualType [] } && { (count _predictedASL) >= 3 } && { _lastASL isEqualType [] } && { (count _lastASL) >= 3 }) then {
-            _predictionError = _predictedASL distance _lastASL;
+        if (_predictionErrorUsable && { _predictedASL isEqualType [] } && { (count _predictedASL) >= 3 } && { _predictionErrorTargetASL isEqualType [] } && { (count _predictionErrorTargetASL) >= 3 }) then {
+            _predictionError = _predictedASL distance _predictionErrorTargetASL;
         };
 
         ["trace_end", [
@@ -1234,6 +1235,7 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
             ["lastVelocity", _lastVelocity],
             ["prediction", _prediction],
             ["predictionError", _predictionError],
+            ["predictionErrorTargetASL", _predictionErrorTargetASL],
             ["impactEvaluation", _impactEvaluation],
             ["predictionErrorUsable", _predictionErrorUsable],
             ["impactPosASL", _impactPosASL],
@@ -1327,7 +1329,8 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     private _hitReason = "no_intersection";
     private _maxSteps = (ceil (_timeToLive / _dt)) min 900;
 
-    for "_i" from 0 to _maxSteps do {
+    private _i = 0;
+    while { _i <= _maxSteps && { _hit isEqualTo [] } && { (_startASL distance _pos) <= 5000 } } do {
         private _elapsed = _i * _dt;
         private _speedNow = vectorMagnitude _vel;
         if (_projectileFamily isEqualTo "rocket") then {
@@ -1349,11 +1352,17 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         private _segHits = lineIntersectsSurfaces [_pos, _next, _unit, vehicle _unit, true, 1, "FIRE", "GEOM", true];
         if !(_segHits isEqualTo []) then {
             private _hitStatus = [_startASL, _segHits # 0] call PHEN_CS_fnc_CSS_getAimHitStatus;
-            _hitReason = _hitStatus # 1;
-            if (_hitStatus # 0) exitWith { _hit = _segHits # 0; };
+            if (_hitStatus # 0) then {
+                _hitReason = _hitStatus # 1;
+                _hit = _segHits # 0;
+            } else {
+                _hitReason = _hitStatus # 1;
+                _pos = _next;
+            };
+        } else {
+            _pos = _next;
         };
-        _pos = _next;
-        if ((_startASL distance _pos) > 5000) exitWith {};
+        _i = _i + 1;
     };
 
     if !(_hit isEqualTo []) then {
