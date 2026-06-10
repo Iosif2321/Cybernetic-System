@@ -4021,26 +4021,3 @@ PHEN_CS_fnc_TacHUD_toggle = {
     {},
     [0, [false, false, false]]
 ] call CBA_fnc_addKeybind;
-
-[
-    PHEN_CS_KEYBIND_CAT_TACHUD,
-    "PHEN_CS_CSS_FocusStatusKey",
-    [PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_FOCUS_STATUS"), PHEN_CS_L("STR_PHEN_CS_CBA_KEY_CSS_FOCUS_STATUS_TT")],
-    {
-        if (!(isNull findDisplay 49) || !(isNull findDisplay 312) || visibleMap) exitWith { false };
-        private _unit = missionNamespace getVariable ["bis_fnc_moduleRemoteControl_unit", player];
-        if !(_unit getVariable ["PHEN_CS_Abillity_CombatSensorSuite", false]) exitWith { false };
-
-        if (!isNil "PHEN_CS_fnc_CSS_showFocusStatus") then {
-            call PHEN_CS_fnc_CSS_showFocusStatus;
-        } else {
-            private _keys = actionKeysNamesArray "zoomTemp";
-            private _keyText = if (_keys isEqualTo []) then { "Unbound" } else { _keys joinString ", " };
-            hintSilent parseText format ["<t color='#66ccff'>ARGUS NATIVE FOCUS</t><br/><t size='0.95'>Hold: %1</t>", _keyText];
-        };
-
-        false
-    },
-    {},
-    [0, [false, false, false]]
-] call CBA_fnc_addKeybind;

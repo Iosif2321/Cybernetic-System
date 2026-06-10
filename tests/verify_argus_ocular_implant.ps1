@@ -28,6 +28,7 @@ $postInitPath = Join-Path $sourceRoot 'bootstrap\XEH_postInit.sqf'
 $stringtablePath = Join-Path $sourceRoot 'Stringtable.xml'
 $configPath = Join-Path $sourceRoot 'config.cpp'
 $readmePath = Join-Path $Root 'README.md'
+$pboPath = Join-Path $Root 'addons\PHEN_Cybernetics.pbo'
 if (-not (Test-Path -LiteralPath $configPath)) {
     $configPath = Join-Path $unpackedRoot 'config.cpp'
 }
@@ -38,8 +39,34 @@ $postInit = Get-Content -LiteralPath $postInitPath -Raw
 $stringtable = Get-Content -LiteralPath $stringtablePath -Raw
 $readme = if (Test-Path -LiteralPath $readmePath) { Get-Content -LiteralPath $readmePath -Raw } else { '' }
 $config = if (Test-Path -LiteralPath $configPath) { Get-Content -LiteralPath $configPath -Raw } else { '' }
-$combined = $settings + "`n" + $preInit + "`n" + $postInit + "`n" + $stringtable + "`n" + $config + "`n" + $readme
+$runtimeCombined = $settings + "`n" + $preInit + "`n" + $postInit + "`n" + $stringtable + "`n" + $config
+$combined = $runtimeCombined + "`n" + $readme
+$pboPayload = if (Test-Path -LiteralPath $pboPath) {
+    [System.Text.Encoding]::GetEncoding(28591).GetString([System.IO.File]::ReadAllBytes($pboPath))
+} else {
+    ''
+}
+
+function Get-TextBetween {
+    param(
+        [string]$Text,
+        [string]$StartNeedle,
+        [string]$EndNeedle
+    )
+
+    $start = $Text.IndexOf($StartNeedle)
+    if ($start -lt 0) { return '' }
+    $end = $Text.IndexOf($EndNeedle, $start + $StartNeedle.Length)
+    if ($end -lt 0 -or $end -le $start) { return $Text.Substring($start) }
+    return $Text.Substring($start, $end - $start)
+}
+
+$postShotRuntime = Get-TextBetween $postInit 'PHEN_CS_fnc_CSS_onFiredDebug' 'PHEN_CS_fnc_CSS_registerFiredDebugEH'
+$postShotPbo = Get-TextBetween $pboPayload 'PHEN_CS_fnc_CSS_onFiredDebug' 'PHEN_CS_fnc_CSS_registerFiredDebugEH'
 $errors = New-Object System.Collections.Generic.List[string]
+if ([string]::IsNullOrEmpty($pboPayload)) {
+    $errors.Add('Packed PBO addons\PHEN_Cybernetics.pbo is missing or empty.')
+}
 
 function Assert-Contains {
     param(
@@ -81,12 +108,56 @@ function Assert-NotRegex {
     param(
         [string]$Text,
         [string]$Pattern,
+        [string]$Message,
+        [string]$Anchor = ''
+    )
+
+    $scanText = $Text
+    if (-not [string]::IsNullOrEmpty($Anchor)) {
+        $anchorIndex = $Text.IndexOf($Anchor, [System.StringComparison]::Ordinal)
+        if ($anchorIndex -lt 0) {
+            return
+        }
+
+        $contextLength = 12000
+        $start = [Math]::Max(0, $anchorIndex - $contextLength)
+        $length = [Math]::Min($Text.Length - $start, ($contextLength * 2) + $Anchor.Length)
+        $scanText = $Text.Substring($start, $length)
+    }
+
+    $options = [System.Text.RegularExpressions.RegexOptions]::Singleline -bor [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    $timeout = [TimeSpan]::FromSeconds(3)
+    try {
+        $matched = [regex]::new($Pattern, $options, $timeout).IsMatch($scanText)
+    } catch [System.Text.RegularExpressions.RegexMatchTimeoutException] {
+        $script:errors.Add("Regex timed out while checking: $Message")
+        return
+    }
+
+    if ($matched) {
+        $script:errors.Add($Message)
+    }
+}
+
+function Assert-RuntimeAndPboContains {
+    param(
+        [string]$Needle,
         [string]$Message
     )
 
-    if ([regex]::IsMatch($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline -bor [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
-        $script:errors.Add($Message)
-    }
+    Assert-Contains $postInit $Needle "$Message (source runtime)"
+    Assert-Contains $pboPayload $Needle "$Message (packed PBO)"
+}
+
+function Assert-RuntimeAndPboNotRegex {
+    param(
+        [string]$Pattern,
+        [string]$Message,
+        [string]$PboAnchor = ''
+    )
+
+    Assert-NotRegex $postInit $Pattern "$Message (source runtime)"
+    Assert-NotRegex $pboPayload $Pattern "$Message (packed PBO)" $PboAnchor
 }
 
 Assert-Contains $settings 'PHEN_CS_Cybernetic_OCULAR_ITEM_3_Name' 'Missing CBA name setting for PHEN_CS_Cybernetic_OCULAR_ITEM_3.'
@@ -127,20 +198,37 @@ Assert-Contains $postInit 'weaponState _unit' 'Pre-fire prediction must read the
 Assert-Contains $postInit 'weaponDirection _weapon' 'Pre-fire prediction must use current weaponDirection.'
 Assert-Contains $postInit 'lineIntersectsSurfaces' 'Pre-fire prediction must raycast/intersect the predicted path.'
 Assert-Contains $postInit 'currentZeroing [_weapon, _muzzle]' 'Pre-fire prediction must read current zeroing.'
-Assert-Contains $postInit 'inputAction "zoomTemp"' 'Argus must observe native view focus instead of selecting a binocular weapon.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_classifyContact' 'Combat Sensor Suite contact classifier is missing.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_filterVisibleContacts' 'Combat Sensor Suite visible-contact filter is missing.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_updateAimPrediction' 'Combat Sensor Suite pre-fire prediction updater is missing.'
-Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getAimRay' 'Aim prediction must centralize weapon/camera aim-ray selection.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getAimFrame' 'Aim prediction must centralize weapon/camera aim-frame selection.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getAimOrigin' 'Aim prediction must resolve the trajectory origin explicitly.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getAimDebugPayload' 'Aim prediction must build structured debug payloads.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getMuzzleCfg' 'Aim prediction must resolve weapon muzzle config before reading speed data.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getBallisticData' 'Aim prediction must centralize weapon/magazine/ammo ballistic data.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_isAimHitValid' 'Aim prediction must validate impact surfaces before drawing markers.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getAimHitStatus' 'Aim prediction must return hit validation reasons for debug and no-solution states.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_allowRayFallback' 'Aim prediction must gate direct ray fallback through an explicit policy.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getAttachmentCoefs' 'Aim prediction must resolve attachment ballistic coefficients explicitly.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getWeaponSlot' 'Aim prediction must identify the active weapon slot explicitly.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_getZeroDistance' 'Aim prediction must normalize currentZeroing output before using it.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_applyZeroing' 'Aim prediction must apply zeroing to the simulated projectile direction.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_shouldApplyZeroing' 'Aim prediction must gate manual zeroing through an explicit policy.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_applyAimCalibration' 'Aim prediction must be able to apply fired-projectile calibration profiles.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_storeShotCalibration' 'FiredMan telemetry must store reusable shot calibration data.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_calibrationWantsZeroing' 'Aim prediction must let fired-projectile calibration choose raw vs zeroed direction mode.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_applySpeedCalibration' 'Aim prediction must reuse measured projectile speed when a calibration profile exists.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_measureDirectionError' 'FiredMan telemetry must measure raw/zeroed direction error against the real projectile velocity.'
 Assert-Contains $postInit 'PHEN_CS_fnc_CSS_isLauncherWeapon' 'Aim prediction must classify launchers and low-speed launcher-like weapons separately.'
-Assert-Contains $postInit 'PHEN_CS_fnc_CSS_applyNativeFocusState' 'Argus focus must use the native zoomTemp action state instead of a scripted camera.'
-Assert-Contains $postInit 'actionKeysNamesArray "zoomTemp"' 'Argus focus HUD must expose the player-bound native focus key names.'
 Assert-Contains $postInit 'secondaryWeapon _unit' 'Aim prediction must include launcher/secondary weapons such as RPGs.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_setAimDebugState' 'Aim prediction must record debug reasons before clearing or drawing the marker.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_logAimDebug' 'Aim prediction debug state must be loggable under debug mode.'
+Assert-Contains $postInit 'PHEN_CS_CSS_PostShotDebugState' 'Argus post-shot telemetry state is missing.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_setPostShotDebugState' 'Argus post-shot telemetry setter is missing.'
+Assert-Contains $postInit 'PHEN_CS_fnc_CSS_logPostShotDebug' 'Argus post-shot telemetry logger is missing.'
+Assert-Contains $postInit '[PHEN_CS][ArgusShot]' 'Argus post-shot telemetry must have a distinct RPT prefix.'
+Assert-Contains $postInit 'PHEN_CS_CSS_ShotCalibration' 'Argus must keep fired-projectile calibration profiles for pre-shot prediction correction.'
+Assert-Contains $postInit 'PHEN_CS_CSS_LastProjectileImpactState' 'Argus must keep the latest projectile impact event state for debug validation.'
 
 Assert-Contains $settings 'PHEN_CS_CSS_AllyMarkerScale' 'Missing CBA setting for per-client Argus allied marker scale.'
 Assert-Contains $settings 'PHEN_CS_CSS_MineMarkerScale' 'Missing CBA setting for per-client Argus mine marker scale.'
@@ -176,20 +264,44 @@ Assert-Regex $postInit 'private\s+_iconRadius\s*=\s*\(_radius - \(_dotSize \* 0\
 Assert-NotContains $postInit 'PHEN_CS_CSS_RadarNose' 'Argus minimap must not draw a second nose/arrow layer over the map-style unit icon.'
 Assert-NotContains $postInit 'arrow2_ca.paa' 'Argus minimap must not overlay separate arrow textures on top of map-style contact icons.'
 
-Assert-Regex $postInit 'PHEN_CS_fnc_CSS_updateAimPrediction\s*=\s*\{[\s\S]*call\s+PHEN_CS_fnc_CSS_getAimRay[\s\S]*call\s+PHEN_CS_fnc_CSS_getBallisticData' 'Aim prediction must build a config-driven live aim solution.'
-Assert-Regex $postInit 'PHEN_CS_fnc_CSS_getAimRay\s*=\s*\{[\s\S]*eyePos _unit[\s\S]*weaponDirection _weapon[\s\S]*_fromWeapon' 'Aim prediction must use stable weaponDirection/eyePos data instead of drifting render-camera-only data.'
-Assert-Regex $postInit 'if\s*\(_fromWeapon\)\s*then\s*\{\s*_sightDir\s*\}\s*else\s*\{ \[_sightDir, _speed, _zeroDistance, _gravityCoef\] call PHEN_CS_fnc_CSS_applyZeroing \}' 'Aim prediction must not double-apply zeroing when Arma provides weaponDirection.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_updateAimPrediction\s*=\s*\{[\s\S]*call\s+PHEN_CS_fnc_CSS_getBallisticData[\s\S]*call\s+PHEN_CS_fnc_CSS_getAimFrame' 'Aim prediction must build a config-driven live aim solution.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_getAimFrame\s*=\s*\{[\s\S]*weaponDirection _weapon[\s\S]*call\s+PHEN_CS_fnc_CSS_getAimOrigin[\s\S]*originMethod[\s\S]*dirMethod' 'Aim prediction must expose origin/direction methods instead of returning an unlabeled ray tuple.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_getAimFrame\s*=\s*\{[\s\S]*call\s+PHEN_CS_fnc_CSS_applyZeroing[\s\S]*zeroingApplied' 'Aim prediction must explicitly record when zeroing is applied to the simulated projectile direction.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_updateAimPrediction\s*=\s*\{[\s\S]*call\s+PHEN_CS_fnc_CSS_getShotCalibration[\s\S]*call\s+PHEN_CS_fnc_CSS_applySpeedCalibration[\s\S]*call\s+PHEN_CS_fnc_CSS_shouldApplyZeroing[\s\S]*call\s+PHEN_CS_fnc_CSS_calibrationWantsZeroing[\s\S]*call\s+PHEN_CS_fnc_CSS_applyAimCalibration' 'Aim prediction must load calibration before selecting zeroing, reuse measured speed, and apply stored shot calibration before integrating the path.'
 Assert-NotContains $postInit 'if (_isLauncher) then { _maxTime = 12; };' 'Launcher prediction must not use a hardcoded long-flight branch as if rockets were solved accurately.'
 Assert-Contains $postInit 'timeToLive' 'Aim prediction must respect ammo timeToLive when bounding simulation.'
 Assert-Contains $postInit 'artilleryLock' 'Aim prediction must account for artillery ammo airFriction behavior.'
 Assert-Contains $postInit '_weaponSpeed < 0' 'Aim prediction must support negative weapon initSpeed as a magazine-speed multiplier.'
+Assert-Contains $postInit 'attachmentCoefs' 'Aim prediction debug payload must include attachment coefficient data.'
 Assert-Contains $postInit '"shotmissile"' 'Aim prediction must detect missile simulation and avoid false launcher impact markers.'
 Assert-Contains $postInit '"NO SOLUTION"' 'Aim prediction must report no solution instead of drawing a false launcher marker.'
-Assert-Regex $postInit 'PHEN_CS_fnc_CSS_isAimHitValid\s*=\s*\{[\s\S]*PHEN_CS_CSS_MinAimSolutionDistance' 'Aim prediction must skip false intersections too close to the player through hit validation.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_getAimHitStatus\s*=\s*\{[\s\S]*PHEN_CS_CSS_MinAimSolutionDistance' 'Aim prediction must skip false intersections too close to the player through hit validation.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_setAimDebugState\s*=\s*\{[\s\S]*PHEN_CS_CSS_AimDebugState\s*=\s*\[_reason, _data, diag_tickTime\]' 'Aim prediction debug state must store reason, data, and timestamp.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_logAimDebug\s*=\s*\{[\s\S]*missionNamespace getVariable \["PHEN_CS_DebugMode", false\]' 'Aim prediction logging must be gated by the existing debug mode setting.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_updateAimPrediction\s*=\s*\{[\s\S]*"launcher_no_solution"[\s\S]*"NO SOLUTION"' 'Launcher prediction must record a visible no-solution reason instead of silently clearing the marker.'
+Assert-Contains $postInit '"no_valid_hit"' 'Aim prediction must record when no valid ray or ballistic hit is available.'
+Assert-Contains $postInit '"originASL"' 'Aim debug payload must include the trajectory origin.'
+Assert-Contains $postInit '"originMethod"' 'Aim debug payload must identify the origin source.'
+Assert-Contains $postInit '"dir"' 'Aim debug payload must include the simulated direction.'
+Assert-Contains $postInit '"dirMethod"' 'Aim debug payload must identify the direction source.'
+Assert-Contains $postInit '"method"' 'Aim debug payload must record the selected solution method.'
+Assert-Contains $postInit '"hitReason"' 'Aim debug payload must record hit validation reasons.'
 Assert-NotRegex $postInit 'if\s*!\(_weapon in \[primaryWeapon _unit, handgunWeapon _unit\]\)' 'Aim prediction must not reject RPGs/launchers with a primary/handgun-only filter.'
 Assert-NotRegex $postInit 'private\s+_dir\s*=\s*vectorNormalized\s*\(_unit weaponDirection _weapon\);[\s\S]*private\s+_startASL\s*=\s*\(eyePos _unit\)' 'Aim prediction still uses the old eyePos/weaponDirection-only path.'
+Assert-RuntimeAndPboNotRegex 'PHEN_CS_fnc_CSS_getAimRay\s*=\s*\{[\s\S]*private\s+_startASL\s*=\s*eyePos _unit;[\s\S]*private\s+_weaponVector\s*=\s*vectorNormalized\s*\(_unit weaponDirection _weapon\);[\s\S]*\[_startASL,\s*_aimDir,\s*_weaponVector,\s*_fromWeapon\]' 'Aim prediction must not mix eyePos origin with weaponDirection direction in an unlabeled aim ray.' 'PHEN_CS_fnc_CSS_getAimRay'
+Assert-RuntimeAndPboNotRegex 'if\s*!\(_hit isEqualTo \[\]\)\s*then\s*\{[\s\S]*PHEN_CS_CSS_AimSolution\s*=\s*\[_hit # 0[\s\S]*\}\s*else\s*\{[\s\S]*PHEN_CS_CSS_AimSolution\s*=\s*\[_rayPosASL,\s*diag_tickTime \+ 0\.35,\s*"ray"' 'Aim prediction must not fall back to a ray marker after a failed ballistic path without explicit fallback gating.' 'PHEN_CS_CSS_AimSolution'
+Assert-RuntimeAndPboNotRegex 'private\s+_debugBase\s*=\s*\[[^\]]*_weapon[^\]]*_weaponDir[^\]]*\];' 'Aim debug payload must not be an unnamed positional _debugBase array.' 'private _debugBase'
 Assert-NotRegex $postInit 'PHEN_CS_fnc_CSS_getAimRay\s*=\s*\{[\s\S]*positionCameraToWorld \[0,0,0\][\s\S]*if \(\(_weaponVector vectorDotProduct _cameraDir\) < 0\.35\)' 'Aim prediction must not drift from camera-first aim-ray selection.'
 
+Assert-NotContains $postInit 'inputAction "zoomTemp"' 'Argus focus/zoom logic must be removed from runtime.'
+Assert-NotContains $postInit 'actionKeysNamesArray "zoomTemp"' 'Argus focus/zoom key-name logic must be removed from runtime.'
+Assert-NotContains $postInit 'PHEN_CS_CSS_FocusActive' 'Argus focus state must be removed from runtime.'
+Assert-NotContains $postInit 'PHEN_CS_CSS_FocusKeyNames' 'Argus focus key cache must be removed from runtime.'
+Assert-NotContains $postInit 'PHEN_CS_fnc_CSS_applyNativeFocusState' 'Argus native focus status function must be removed.'
+Assert-NotContains $postInit 'PHEN_CS_fnc_CSS_showFocusStatus' 'Argus focus status HUD function must be removed.'
+Assert-NotContains $postInit 'ARGUS NATIVE FOCUS' 'Argus focus status HUD text must be removed.'
+Assert-NotContains $preInit 'PHEN_CS_CSS_FocusStatusKey' 'Argus focus status CBA keybind must be removed.'
+Assert-NotContains $runtimeCombined 'zoomTemp' 'Argus runtime/config must not reference native focus/zoomTemp after focus removal.'
 Assert-NotContains $postInit 'camCreate' 'Argus combat focus must not create a scripted camera.'
 Assert-NotContains $postInit 'cameraEffect ["Internal","Back"]' 'Argus combat focus must not switch the player view to a scripted camera.'
 Assert-NotContains $postInit 'camSetFov' 'Argus combat focus must not fake native focus by setting scripted camera FOV.'
@@ -205,8 +317,8 @@ Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_MINE_MARKER_SCALE' 'Stringtabl
 Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_MINE_MARKER_SCALE_TT' 'Stringtable is missing Argus mine marker scale tooltip localization.'
 Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_HUD_SCALE' 'Stringtable is missing Argus HUD scale localization.'
 Assert-Contains $stringtable 'STR_PHEN_CS_CBA_CSS_HUD_SCALE_TT' 'Stringtable is missing Argus HUD scale tooltip localization.'
-Assert-Contains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_FOCUS_STATUS' 'Stringtable is missing Argus native focus status key localization.'
-Assert-Contains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_FOCUS_STATUS_TT' 'Stringtable is missing Argus native focus status tooltip localization.'
+Assert-NotContains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_FOCUS_STATUS' 'Stringtable must not keep the removed Argus focus status key localization.'
+Assert-NotContains $stringtable 'STR_PHEN_CS_CBA_KEY_CSS_FOCUS_STATUS_TT' 'Stringtable must not keep the removed Argus focus status tooltip localization.'
 Assert-NotContains $stringtable 'actual camera zoom' 'Argus localization must not describe a scripted actual camera zoom.'
 
 if ($config -ne '') {
@@ -215,15 +327,37 @@ if ($config -ne '') {
     Assert-Contains $config '"PHEN_CS_LowLightOptics_MkIV"' 'CfgPatches weapons[] does not list PHEN_CS_LowLightOptics_MkIV.'
 }
 
-Assert-NotContains $combined 'PHEN_CS_ArgusIntegratedBinocular' 'Argus must not define, add, remove, select, document, or test a held binocular weapon.'
-Assert-NotContains $combined 'class ArgusStepZoom' 'Removed Argus binocular OpticsModes/ArgusStepZoom block is still present.'
-Assert-NotContains $combined 'discretefov[]={0.25,0.125,0.0625,0.03125};' 'Removed Argus binocular stepped FOV config is still present.'
+Assert-NotContains $runtimeCombined 'PHEN_CS_ArgusIntegratedBinocular' 'Argus runtime/config must not define, add, remove, or select a held binocular weapon.'
+Assert-NotContains $runtimeCombined 'class ArgusStepZoom' 'Removed Argus binocular OpticsModes/ArgusStepZoom block is still present in runtime/config.'
+Assert-NotContains $runtimeCombined 'discretefov[]={0.25,0.125,0.0625,0.03125};' 'Removed Argus binocular stepped FOV config is still present in runtime/config.'
 Assert-NotContains $postInit 'PHEN_CS_CSS_AddedBinocular' 'Runtime still tracks a generated binocular weapon.'
-Assert-NotContains $postInit 'addEventHandler ["FiredMan"' 'Argus must not use FiredMan actual-projectile tracking for its prediction marker.'
-Assert-NotContains $postInit 'PHEN_CS_fnc_CSS_onFired' 'Argus actual-impact FiredMan handler function is still present.'
-Assert-NotContains $postInit 'PHEN_CS_fnc_CSS_registerFiredEH' 'Argus FiredMan registration function is still present.'
-Assert-NotContains $postInit '_projectile' 'Argus prediction must not be based on a fired projectile object.'
+Assert-Regex $postInit 'addEventHandler \["FiredMan"[\s\S]*PHEN_CS_fnc_CSS_onFiredDebug' 'Argus may use FiredMan only for isolated debug telemetry.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_onFiredDebug\s*=\s*\{[\s\S]*call\s+PHEN_CS_fnc_CSS_setPostShotDebugState' 'Argus actual-projectile telemetry must write post-shot debug state through the telemetry setter.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_onFiredDebug\s*=\s*\{[\s\S]*getShotInfo _projectile[\s\S]*call\s+PHEN_CS_fnc_CSS_storeShotCalibration' 'Argus FiredMan telemetry must compare real shotInfo/projectile velocity with the predicted aim frame and store calibration.'
+Assert-Regex $postInit 'PHEN_CS_fnc_CSS_onFiredDebug\s*=\s*\{[\s\S]*_rawAngle[\s\S]*_zeroedAngle[\s\S]*_chosenBaseMode\s*=\s*"raw"[\s\S]*PHEN_CS_fnc_CSS_storeShotCalibration' 'Argus FiredMan telemetry must choose the lower-error raw/zeroed direction basis before storing calibration.'
+Assert-Contains $postInit 'calibrationBaseMode' 'Argus FiredMan telemetry must expose the chosen raw/zeroed calibration basis in debug state.'
+Assert-Contains $postInit 'addEventHandler ["HitPart"' 'Argus projectile debug telemetry must capture direct hit event state.'
+Assert-Contains $postInit 'addEventHandler ["Deflected"' 'Argus projectile debug telemetry must capture deflection event state.'
+Assert-Contains $postInit 'addEventHandler ["Penetrated"' 'Argus projectile debug telemetry must capture penetration event state.'
+Assert-NotContains $postShotRuntime 'PHEN_CS_CSS_AimSolution =' 'Post-shot telemetry must not mutate the pre-shot prediction marker solution. (source runtime)'
+Assert-NotContains $postShotPbo 'PHEN_CS_CSS_AimSolution =' 'Post-shot telemetry must not mutate the pre-shot prediction marker solution. (packed PBO)'
+Assert-RuntimeAndPboNotRegex 'PHEN_CS_CSS_AimDebugState\s*=\s*PHEN_CS_CSS_PostShotDebugState|PHEN_CS_CSS_PostShotDebugState\s*=\s*PHEN_CS_CSS_AimDebugState' 'Pre-shot and post-shot debug states must not alias each other.'
 Assert-NotContains $preInit 'selectWeapon' 'Combat Sensor keybind must not switch the player weapon.'
+
+Assert-Contains $pboPayload 'PHEN_CS_CSS_AimDebugState' 'Packed PBO must contain the Argus aim debug state.'
+Assert-Contains $pboPayload 'PHEN_CS_fnc_CSS_logAimDebug' 'Packed PBO must contain the Argus aim debug logger.'
+Assert-Contains $pboPayload '[PHEN_CS][ArgusAim]' 'Packed PBO must contain the Argus aim debug RPT prefix.'
+Assert-Contains $pboPayload 'PHEN_CS_CSS_PostShotDebugState' 'Packed PBO must contain the Argus post-shot debug state.'
+Assert-Contains $pboPayload '[PHEN_CS][ArgusShot]' 'Packed PBO must contain the Argus post-shot debug RPT prefix.'
+Assert-Contains $pboPayload 'PHEN_CS_CSS_ShotCalibration' 'Packed PBO must contain fired-projectile calibration support.'
+Assert-Contains $pboPayload 'getShotInfo _projectile' 'Packed PBO must contain real projectile shotInfo telemetry.'
+Assert-NotContains $pboPayload 'zoomTemp' 'Packed PBO must not contain removed native focus/zoomTemp references.'
+Assert-NotContains $pboPayload 'PHEN_CS_CSS_FocusStatusKey' 'Packed PBO must not contain the removed Argus focus status keybind.'
+Assert-NotContains $pboPayload 'PHEN_CS_fnc_CSS_showFocusStatus' 'Packed PBO must not contain the removed Argus focus status function.'
+Assert-NotContains $pboPayload 'PHEN_CS_ArgusIntegratedBinocular' 'Packed PBO must not contain the removed Argus binocular weapon.'
+Assert-NotContains $pboPayload 'class ArgusStepZoom' 'Packed PBO must not contain the removed Argus stepped zoom optics mode.'
+Assert-NotContains $pboPayload 'camCreate' 'Packed PBO must not contain scripted camera zoom logic.'
+Assert-NotContains $pboPayload 'camSetFov' 'Packed PBO must not contain scripted camera FOV zoom logic.'
 
 if ($errors.Count -gt 0) {
     Write-Host 'Argus ocular implant verification failed:'
