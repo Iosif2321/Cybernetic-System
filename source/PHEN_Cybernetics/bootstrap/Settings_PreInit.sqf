@@ -164,6 +164,20 @@ PHEN_CS_HasKAT = isClass (configFile >> "CfgPatches" >> "kat_main");
     }
 ] call CBA_fnc_addSetting;
 
+[
+    "PHEN_CS_CSS_UseShotCalibration",
+    "CHECKBOX",
+    ["Argus ballistic shot calibration", "Apply learned first-shot launch-vector bias to the pre-shot ballistic predictor. Rocket and missile families remain disabled."],
+    [PHEN_CS_L("STR_PHEN_CS_CBA_CAT_TACHUD"), PHEN_CS_L("STR_PHEN_CS_CBA_SUB_SETTINGS")],
+    false,
+    1,
+    {
+        params ["_value"];
+        PHEN_CS_CSS_UseShotCalibration = _value;
+        missionNamespace setVariable ["PHEN_CS_CSS_UseShotCalibration", _value];
+    }
+] call CBA_fnc_addSetting;
+
 /*
     General
 */
