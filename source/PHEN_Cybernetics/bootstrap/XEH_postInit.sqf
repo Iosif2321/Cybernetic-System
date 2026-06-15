@@ -26,7 +26,15 @@ PHEN_CS_CSS_ShotCalibration = [];
 PHEN_CS_CSS_LastProjectileImpactState = ["init", [], 0];
 PHEN_CS_CSS_ShotSequence = 0;
 PHEN_CS_CSS_LastShotContext = [];
+PHEN_CS_CSS_AimCache = [];
 PHEN_CS_CSS_CalibrationMinBiasDeg = 0.5;
+PHEN_CS_CSS_AimUpdateDefaultInterval = 0.18;
+PHEN_CS_CSS_AimUpdateShellInterval = 0.45;
+PHEN_CS_CSS_AimUpdateRocketInterval = 0.25;
+PHEN_CS_CSS_AimReuseAngleDeg = 0.35;
+PHEN_CS_CSS_AimReuseShellAngleDeg = 0.45;
+PHEN_CS_CSS_AimSolutionTTL = 0.75;
+PHEN_CS_CSS_AimDrawSurfaceLift = 0.35;
 if (isNil "PHEN_CS_CSS_UseShotCalibration") then { PHEN_CS_CSS_UseShotCalibration = false; };
 PHEN_CS_CSS_BallisticConfigCache = createHashMap;
 PHEN_CS_CSS_BallisticAdvancedMode = false;
@@ -1206,6 +1214,108 @@ PHEN_CS_fnc_CSS_measureDirectionError = {
     [acos _dot, _actual vectorDotProduct _right, _actual vectorDotProduct _up, _dot]
 };
 
+PHEN_CS_fnc_CSS_getAimInputDirection = {
+    params ["_unit", "_weapon"];
+
+    private _weaponDir = vectorNormalized (_unit weaponDirection _weapon);
+    if ((vectorMagnitude _weaponDir) > 0.001) exitWith { _weaponDir };
+
+    [_unit] call PHEN_CS_fnc_CSS_getViewDirection
+};
+
+PHEN_CS_fnc_CSS_getAimUpdateInterval = {
+    params [["_projectileFamily", ""]];
+
+    switch (toLower _projectileFamily) do {
+        case "shell": { missionNamespace getVariable ["PHEN_CS_CSS_AimUpdateShellInterval", PHEN_CS_CSS_AimUpdateShellInterval] };
+        case "rocket": { missionNamespace getVariable ["PHEN_CS_CSS_AimUpdateRocketInterval", PHEN_CS_CSS_AimUpdateRocketInterval] };
+        case "missile": { missionNamespace getVariable ["PHEN_CS_CSS_AimUpdateRocketInterval", PHEN_CS_CSS_AimUpdateRocketInterval] };
+        default { missionNamespace getVariable ["PHEN_CS_CSS_AimUpdateDefaultInterval", PHEN_CS_CSS_AimUpdateDefaultInterval] };
+    }
+};
+
+PHEN_CS_fnc_CSS_getAimReuseAngleDeg = {
+    params [["_projectileFamily", ""]];
+
+    switch (toLower _projectileFamily) do {
+        case "shell": { missionNamespace getVariable ["PHEN_CS_CSS_AimReuseShellAngleDeg", PHEN_CS_CSS_AimReuseShellAngleDeg] };
+        default { missionNamespace getVariable ["PHEN_CS_CSS_AimReuseAngleDeg", PHEN_CS_CSS_AimReuseAngleDeg] };
+    }
+};
+
+PHEN_CS_fnc_CSS_getAimCacheKey = {
+    params ["_unit", "_weapon", "_muzzle", "_mode", "_magazine", "_ammo", "_zeroDistance", "_projectileFamily", "_speed", "_simulationStep", "_applyZeroing", "_calibrationApplied"];
+
+    private _advancedMode = missionNamespace getVariable ["PHEN_CS_CSS_BallisticAdvancedMode", PHEN_CS_CSS_BallisticAdvancedMode];
+    format [
+        "%1|%2|%3|%4|%5|%6|%7|%8|%9|%10|%11|%12|%13",
+        _weapon,
+        _muzzle,
+        _mode,
+        _magazine,
+        _ammo,
+        round (_zeroDistance * 10),
+        stance _unit,
+        toLower _projectileFamily,
+        round (_speed * 100),
+        round (_simulationStep * 1000),
+        _applyZeroing,
+        _calibrationApplied,
+        _advancedMode
+    ]
+};
+
+PHEN_CS_fnc_CSS_refreshAimSolutionExpiry = {
+    params [["_solution", []], ["_status", ""], ["_angleDeg", -1], ["_nextUpdateAt", -1]];
+
+    if !(_solution isEqualType []) exitWith { [] };
+    private _refreshed = +_solution;
+    if ((count _refreshed) > 1) then {
+        _refreshed set [1, diag_tickTime + PHEN_CS_CSS_AimSolutionTTL];
+    };
+    if ((count _refreshed) > 5) then {
+        private _meta = +(_refreshed # 5);
+        _meta = [_meta, "aimCacheStatus", _status] call PHEN_CS_fnc_CSS_setPairValue;
+        _meta = [_meta, "aimCacheAngleDeg", _angleDeg] call PHEN_CS_fnc_CSS_setPairValue;
+        _meta = [_meta, "aimCacheNextUpdateAt", _nextUpdateAt] call PHEN_CS_fnc_CSS_setPairValue;
+        _refreshed set [5, _meta];
+    };
+
+    _refreshed
+};
+
+PHEN_CS_fnc_CSS_getReusableAimSolution = {
+    params ["_cacheKey", "_inputDir", "_projectileFamily"];
+
+    private _cache = PHEN_CS_CSS_AimCache;
+    if !(_cache isEqualType [] && { (count _cache) >= 6 }) exitWith { [false, [], "no_cache", -1] };
+    _cache params ["_storedKey", "_storedDir", "_storedFamily", "_storedSolution", "_nextUpdateAt", "_storedAt"];
+
+    if !(_storedKey isEqualTo _cacheKey) exitWith { [false, [], "key_changed", -1] };
+    if (diag_tickTime >= _nextUpdateAt) exitWith { [false, [], "expired", -1] };
+
+    private _angleData = [_storedDir, _inputDir] call PHEN_CS_fnc_CSS_measureDirectionError;
+    private _angleDeg = _angleData # 0;
+    if (_angleDeg < 0) exitWith { [false, [], "invalid_direction", _angleDeg] };
+
+    private _maxAngleDeg = [_projectileFamily] call PHEN_CS_fnc_CSS_getAimReuseAngleDeg;
+    if (_angleDeg > _maxAngleDeg) exitWith { [false, [], "aim_throttled_moved", _angleDeg] };
+
+    private _solution = [_storedSolution, "reuse", _angleDeg, _nextUpdateAt] call PHEN_CS_fnc_CSS_refreshAimSolutionExpiry;
+    [true, _solution, "reuse", _angleDeg]
+};
+
+PHEN_CS_fnc_CSS_storeAimSolutionCache = {
+    params ["_cacheKey", "_inputDir", "_projectileFamily", "_solution"];
+
+    private _interval = [_projectileFamily] call PHEN_CS_fnc_CSS_getAimUpdateInterval;
+    private _nextUpdateAt = diag_tickTime + (_interval max 0.05);
+    private _storedSolution = [_solution, "computed", 0, _nextUpdateAt] call PHEN_CS_fnc_CSS_refreshAimSolutionExpiry;
+    PHEN_CS_CSS_AimCache = [_cacheKey, _inputDir, _projectileFamily, +_storedSolution, _nextUpdateAt, diag_tickTime];
+
+    _storedSolution
+};
+
 PHEN_CS_fnc_CSS_storeShotCalibration = {
     params ["_unit", "_weapon", "_muzzle", "_mode", "_magazine", "_ammo", "_zeroDistance", "_aimFrame", "_projectileStartASL", "_projectileVelocity", ["_baseMode", "zeroed"], ["_projectileFamily", ""]];
 
@@ -1559,9 +1669,10 @@ PHEN_CS_fnc_CSS_setAimDebugState = {
 };
 
 PHEN_CS_fnc_CSS_clearAimSolution = {
-    params [["_reason", ""], ["_data", []]];
+    params [["_reason", ""], ["_data", []], ["_keepCache", false]];
 
     PHEN_CS_CSS_AimSolution = [];
+    if (!_keepCache) then { PHEN_CS_CSS_AimCache = []; };
     [_reason, _data] call PHEN_CS_fnc_CSS_setAimDebugState;
 };
 
@@ -2373,6 +2484,29 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         _applyZeroing = [_calibration, _applyZeroing] call PHEN_CS_fnc_CSS_calibrationWantsZeroing;
     };
 
+    private _aimInputDir = [_unit, _weapon] call PHEN_CS_fnc_CSS_getAimInputDirection;
+    private _aimCacheKey = [_unit, _weapon, _muzzle, _mode, _magazine, _ammo, _zeroDistance, _projectileFamily, _speed, _simulationStep, _applyZeroing, _calibrationApplied] call PHEN_CS_fnc_CSS_getAimCacheKey;
+    private _cacheReuse = [_aimCacheKey, _aimInputDir, _projectileFamily] call PHEN_CS_fnc_CSS_getReusableAimSolution;
+    _cacheReuse params ["_cacheHit", "_cachedSolution", "_aimCacheStatus", "_aimCacheAngleDeg"];
+    if (_cacheHit) exitWith {
+        PHEN_CS_CSS_AimSolution = _cachedSolution;
+    };
+    if (_aimCacheStatus isEqualTo "aim_throttled_moved") exitWith {
+        ["aim_throttled_moved", [
+            ["weapon", _weapon],
+            ["muzzle", _muzzle],
+            ["mode", _mode],
+            ["magazine", _magazine],
+            ["ammo", _ammo],
+            ["projectileFamily", _projectileFamily],
+            ["zeroDistance", _zeroDistance],
+            ["aimCacheStatus", _aimCacheStatus],
+            ["aimCacheAngleDeg", _aimCacheAngleDeg],
+            ["aimCacheThresholdDeg", [_projectileFamily] call PHEN_CS_fnc_CSS_getAimReuseAngleDeg],
+            ["aimCacheInterval", [_projectileFamily] call PHEN_CS_fnc_CSS_getAimUpdateInterval]
+        ], true] call PHEN_CS_fnc_CSS_clearAimSolution;
+    };
+
     private _aimFrame = [_unit, _weapon, _speed, _zeroDistance, _gravityCoef, _applyZeroing, _ballisticProfile] call PHEN_CS_fnc_CSS_getAimFrame;
     private _preCorrectionAimFrame = +_aimFrame;
     if (_calibrationApplied) then {
@@ -2492,21 +2626,21 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     if !(_hit isEqualTo []) then {
         if (_projectileFamily in ["rocket", "missile"]) then {
             private _rocketMethod = "rocket_approx";
-            PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "rocket", _label, _zeroDistance, _correctionTelemetry];
+            PHEN_CS_CSS_AimSolution = [_aimCacheKey, _aimInputDir, _projectileFamily, [_hit # 0, diag_tickTime + PHEN_CS_CSS_AimSolutionTTL, "rocket", _label, _zeroDistance, _correctionTelemetry]] call PHEN_CS_fnc_CSS_storeAimSolutionCache;
             private _payload = [_rocketMethod, _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
             [_rocketMethod, _payload] call PHEN_CS_fnc_CSS_setAimDebugState;
         } else {
             if (_projectileFamily isEqualTo "shell") then {
-                PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "shell_trajectory", _label, _zeroDistance, _correctionTelemetry];
+                PHEN_CS_CSS_AimSolution = [_aimCacheKey, _aimInputDir, _projectileFamily, [_hit # 0, diag_tickTime + PHEN_CS_CSS_AimSolutionTTL, "shell_trajectory", _label, _zeroDistance, _correctionTelemetry]] call PHEN_CS_fnc_CSS_storeAimSolutionCache;
                 private _payload = ["shell_trajectory_collision", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
                 ["shell_trajectory_collision", _payload] call PHEN_CS_fnc_CSS_setAimDebugState;
             } else {
                 if (_projectileFamily isEqualTo "bullet") then {
-                    PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "bullet_trajectory", _label, _zeroDistance, _correctionTelemetry];
+                    PHEN_CS_CSS_AimSolution = [_aimCacheKey, _aimInputDir, _projectileFamily, [_hit # 0, diag_tickTime + PHEN_CS_CSS_AimSolutionTTL, "bullet_trajectory", _label, _zeroDistance, _correctionTelemetry]] call PHEN_CS_fnc_CSS_storeAimSolutionCache;
                     private _payload = ["bullet_trajectory_collision", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
                     ["bullet_trajectory_collision", _payload] call PHEN_CS_fnc_CSS_setAimDebugState;
                 } else {
-                    PHEN_CS_CSS_AimSolution = [_hit # 0, diag_tickTime + 0.35, "ballistic", _label, _zeroDistance, _correctionTelemetry];
+                    PHEN_CS_CSS_AimSolution = [_aimCacheKey, _aimInputDir, _projectileFamily, [_hit # 0, diag_tickTime + PHEN_CS_CSS_AimSolutionTTL, "ballistic", _label, _zeroDistance, _correctionTelemetry]] call PHEN_CS_fnc_CSS_storeAimSolutionCache;
                     private _payload = ["ballistic_hit", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, _hit, _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
                     ["ballistic_hit", _payload] call PHEN_CS_fnc_CSS_setAimDebugState;
                 };
@@ -2516,6 +2650,20 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         private _payload = ["no_ballistic_hit", _unit, _weapon, _muzzle, _mode, _magazine, _ammo, _simulation, _speed, _airFriction, _gravityCoef, _zeroDistance, _weaponSlot, _aimFrame, _attachmentCoefs, _hitReason, [["rayStatus", _rayStatus], ["rayHits", _rayHits]], _predictionQuality, _correctionTelemetry] call PHEN_CS_fnc_CSS_getAimDebugPayload;
         ["no_ballistic_hit", _payload] call PHEN_CS_fnc_CSS_clearAimSolution;
     };
+};
+
+PHEN_CS_fnc_CSS_getAimDrawASL = {
+    params ["_unit", "_impactPosASL"];
+
+    if (isNull _unit || { !(_impactPosASL isEqualType []) } || { (count _impactPosASL) < 3 }) exitWith { [] };
+    private _lift = missionNamespace getVariable ["PHEN_CS_CSS_AimDrawSurfaceLift", PHEN_CS_CSS_AimDrawSurfaceLift];
+    private _viewOriginASL = eyePos _unit;
+    private _toCamera = _viewOriginASL vectorDiff _impactPosASL;
+    if ((vectorMagnitude _toCamera) > 0.1) exitWith {
+        _impactPosASL vectorAdd ((vectorNormalized _toCamera) vectorMultiply _lift)
+    };
+
+    _impactPosASL vectorAdd [0, 0, _lift]
 };
 
 PHEN_CS_fnc_CSS_draw3D = {
@@ -2559,8 +2707,10 @@ PHEN_CS_fnc_CSS_draw3D = {
     if !(_solution isEqualTo []) then {
         _solution params ["_impactPosASL", "_expiresAt", "_method", "_label"];
         if (_expiresAt > diag_tickTime && { [_unit, _impactPosASL, 5000] call PHEN_CS_fnc_CSS_isAimVisible }) then {
+            private _drawASL = [_unit, _impactPosASL] call PHEN_CS_fnc_CSS_getAimDrawASL;
+            if (_drawASL isEqualTo []) exitWith {};
             private _color = if (_method isEqualTo "ballistic") then { [0.2,0.85,1,0.9] } else { [1,0.72,0.1,0.78] };
-            drawIcon3D ["\a3\ui_f\data\map\markers\military\destroy_ca.paa", _color, ASLToAGL _impactPosASL, 0.72 * _hudScale, 0.72 * _hudScale, 0, _label, 1, 0.032 * _hudScale, "RobotoCondensed", "center", false];
+            drawIcon3D ["\a3\ui_f\data\map\markers\military\destroy_ca.paa", _color, ASLToAGL _drawASL, 0.72 * _hudScale, 0.72 * _hudScale, 0, _label, 1, 0.032 * _hudScale, "RobotoCondensed", "center", false];
         };
     };
 };
