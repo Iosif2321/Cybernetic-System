@@ -20,6 +20,7 @@ PHEN_CS_CSS_MaxRadarContacts = 32;
 PHEN_CS_CSS_AimSolution = [];
 PHEN_CS_CSS_AimDebugState = ["init", [], 0];
 PHEN_CS_CSS_AimDebugLastLog = 0;
+PHEN_CS_CSS_AimDrawDebugLastLog = 0;
 PHEN_CS_CSS_PostShotDebugState = ["init", [], 0];
 PHEN_CS_CSS_PostShotDebugLastLog = 0;
 PHEN_CS_CSS_ShotCalibration = [];
@@ -495,6 +496,284 @@ PHEN_CS_fnc_CSS_getProjectileFamily = {
     "unknown"
 };
 
+PHEN_CS_fnc_CSS_isACEAdvancedBallisticsEnabled = {
+    if !(isClass (configFile >> "CfgPatches" >> "ace_advanced_ballistics")) exitWith { false };
+
+    private _enabled = missionNamespace getVariable ["ace_advanced_ballistics_enabled", true];
+    if (_enabled isEqualType false) exitWith { _enabled };
+    if (_enabled isEqualType 0) exitWith { _enabled != 0 };
+
+    true
+};
+
+PHEN_CS_fnc_CSS_getACEBallisticCoefficient = {
+    params [["_coefficients", []], ["_velocityBoundaries", []], ["_velocity", 0]];
+
+    if !(_coefficients isEqualType []) exitWith { 0 };
+    if (_coefficients isEqualTo []) exitWith { 0 };
+
+    private _index = 0;
+    if (_velocityBoundaries isEqualType [] && { !(_velocityBoundaries isEqualTo []) }) then {
+        {
+            if (_velocity < _x) then { _index = _forEachIndex + 1; };
+        } forEach _velocityBoundaries;
+    };
+    _index = (_index max 0) min ((count _coefficients) - 1);
+
+    _coefficients # _index
+};
+
+PHEN_CS_fnc_CSS_getACEBallisticDecision = {
+    params [["_ammo", ""], ["_ammoCfg", configNull], ["_projectileFamily", ""]];
+
+    private _aceEnabled = call PHEN_CS_fnc_CSS_isACEAdvancedBallisticsEnabled;
+    private _isACEAmmo = ((toLower _ammo) find "ace_") == 0;
+    private _ammoCfgIsClass = isClass _ammoCfg;
+    private _ammoCfgClass = if (_ammoCfgIsClass) then { configName _ammoCfg } else { "" };
+    private _aceBallisticCoefficientsIsArray = isArray (_ammoCfg >> "ACE_ballisticCoefficients");
+    private _aceDragModelIsNumber = isNumber (_ammoCfg >> "ACE_dragModel");
+    private _hasACEConfig = _aceBallisticCoefficientsIsArray || { _aceDragModelIsNumber };
+    private _useACE = (_projectileFamily isEqualTo "bullet") && { _aceEnabled } && { _isACEAmmo } && { _hasACEConfig };
+
+    private _aceDecisionReason = "use_ace";
+    if !(_projectileFamily isEqualTo "bullet") then {
+        _aceDecisionReason = "not_bullet";
+    } else {
+        if !(_aceEnabled) then {
+            _aceDecisionReason = "ace_disabled_or_missing";
+        } else {
+            if !(_isACEAmmo) then {
+                _aceDecisionReason = "not_ace_ammo";
+            } else {
+                if !(_hasACEConfig) then {
+                    _aceDecisionReason = "ace_config_missing";
+                };
+            };
+        };
+    };
+
+    [
+        ["aceEnabled", _aceEnabled],
+        ["isACEAmmo", _isACEAmmo],
+        ["hasACEConfig", _hasACEConfig],
+        ["ammoCfgClass", _ammoCfgClass],
+        ["ammoCfgIsClass", _ammoCfgIsClass],
+        ["aceBallisticCoefficientsIsArray", _aceBallisticCoefficientsIsArray],
+        ["aceDragModelIsNumber", _aceDragModelIsNumber],
+        ["useACE", _useACE],
+        ["aceDecisionReason", _aceDecisionReason],
+        ["projectileFamily", _projectileFamily],
+        ["ammo", _ammo]
+    ]
+};
+
+PHEN_CS_fnc_CSS_getACEBallisticData = {
+    params [["_ammo", ""], ["_ammoCfg", configNull], ["_projectileFamily", ""], ["_aceDecision", []]];
+
+    if (_aceDecision isEqualTo []) then {
+        _aceDecision = [_ammo, _ammoCfg, _projectileFamily] call PHEN_CS_fnc_CSS_getACEBallisticDecision;
+    };
+
+    private _useACE = [_aceDecision, "useACE", false] call PHEN_CS_fnc_CSS_getPairValue;
+    if !(_useACE) exitWith { [] };
+
+    private _dragModel = getNumber (_ammoCfg >> "ACE_dragModel");
+    if !(_dragModel in [1, 2, 5, 6, 7, 8]) then { _dragModel = 1; };
+
+    private _ballisticCoefficients = getArray (_ammoCfg >> "ACE_ballisticCoefficients");
+    if (_ballisticCoefficients isEqualTo []) then { _ballisticCoefficients = [0.5]; };
+
+    private _velocityBoundaries = getArray (_ammoCfg >> "ACE_velocityBoundaries");
+    private _standardAtmosphere = getText (_ammoCfg >> "ACE_standardAtmosphere");
+    if (_standardAtmosphere isEqualTo "") then { _standardAtmosphere = "ICAO"; };
+
+    private _muzzleVelocities = getArray (_ammoCfg >> "ACE_muzzleVelocities");
+    private _barrelLengths = getArray (_ammoCfg >> "ACE_barrelLengths");
+    private _twistDirection = "";
+    if (isText (_ammoCfg >> "ACE_twistDirection")) then { _twistDirection = getText (_ammoCfg >> "ACE_twistDirection"); };
+    if (isNumber (_ammoCfg >> "ACE_twistDirection")) then { _twistDirection = getNumber (_ammoCfg >> "ACE_twistDirection"); };
+    private _stabilityFactor = 0;
+    if (isNumber (_ammoCfg >> "ACE_stabilityFactor")) then { _stabilityFactor = getNumber (_ammoCfg >> "ACE_stabilityFactor"); };
+
+    private _bc = [_ballisticCoefficients, _velocityBoundaries, getNumber (_ammoCfg >> "typicalSpeed")] call PHEN_CS_fnc_CSS_getACEBallisticCoefficient;
+
+    [
+        ["model", "ace_advanced"],
+        ["enabled", true],
+        ["ammo", _ammo],
+        ["dragModel", _dragModel],
+        ["ballisticCoefficients", _ballisticCoefficients],
+        ["velocityBoundaries", _velocityBoundaries],
+        ["standardAtmosphere", _standardAtmosphere],
+        ["muzzleVelocities", _muzzleVelocities],
+        ["barrelLengths", _barrelLengths],
+        ["twistDirection", _twistDirection],
+        ["stabilityFactor", _stabilityFactor],
+        ["bc", _bc],
+        ["lastBC", _bc],
+        ["lastRetardation", 0]
+    ]
+};
+
+PHEN_CS_fnc_CSS_getWindTelemetry = {
+    params [["_posASL", []]];
+
+    private _engineWind = wind;
+    private _aceWind = [];
+    private _aceWindSource = "none";
+    private _hasAceWindDeflectionFn = !(isNil "ace_winddeflection_fnc_getCurrentWind");
+    private _hasAceWeatherWindFn = !(isNil "ace_weather_fnc_calculateWindSpeed");
+
+    if (_posASL isEqualType [] && { (count _posASL) >= 3 }) then {
+        if (_hasAceWindDeflectionFn) then {
+            private _windResult = [_posASL] call ace_winddeflection_fnc_getCurrentWind;
+            if (_windResult isEqualType [] && { (count _windResult) >= 2 }) then {
+                private _windZ = if ((count _windResult) > 2) then { _windResult # 2 } else { 0 };
+                _aceWind = [_windResult # 0, _windResult # 1, _windZ];
+                _aceWindSource = "ace_winddeflection_fnc_getCurrentWind";
+            };
+        } else {
+            if (_hasAceWeatherWindFn) then {
+                private _windMagnitude = [_posASL, true, true, true] call ace_weather_fnc_calculateWindSpeed;
+                private _engineWindMagnitude = vectorMagnitude _engineWind;
+                _aceWind = if (_engineWindMagnitude > 0.001) then {
+                    (vectorNormalized _engineWind) vectorMultiply _windMagnitude
+                } else {
+                    [0,0,0]
+                };
+                _aceWindSource = "ace_weather_fnc_calculateWindSpeed";
+            };
+        };
+    };
+
+    [
+        ["posASL", _posASL],
+        ["engineWind", _engineWind],
+        ["engineWindSpeed", vectorMagnitude _engineWind],
+        ["aceWind", _aceWind],
+        ["aceWindSpeed", if (_aceWind isEqualType [] && { (count _aceWind) >= 3 }) then { vectorMagnitude _aceWind } else { -1 }],
+        ["aceWindSource", _aceWindSource],
+        ["hasAceWindDeflectionFn", _hasAceWindDeflectionFn],
+        ["hasAceWeatherWindFn", _hasAceWeatherWindFn]
+    ]
+};
+
+PHEN_CS_fnc_CSS_getPIPWindVector = {
+    params [["_posASL", []], ["_windTelemetry", []]];
+
+    if (_windTelemetry isEqualTo []) then {
+        _windTelemetry = [_posASL] call PHEN_CS_fnc_CSS_getWindTelemetry;
+    };
+
+    private _engineWind = [_windTelemetry, "engineWind", wind] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceWind = [_windTelemetry, "aceWind", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceWindSource = [_windTelemetry, "aceWindSource", "none"] call PHEN_CS_fnc_CSS_getPairValue;
+    private _windVector = _engineWind;
+
+    if (_aceWindSource != "none" && { _aceWind isEqualType [] } && { (count _aceWind) >= 3 }) then {
+        _windVector = _aceWind;
+    };
+
+    if !(_windVector isEqualType [] && { (count _windVector) >= 3 }) exitWith { [0,0,0] };
+    [_windVector # 0, _windVector # 1, _windVector # 2]
+};
+
+PHEN_CS_fnc_CSS_getScopeAdjustmentTelemetry = {
+    params [["_unit", objNull], ["_weapon", ""], ["_muzzle", ""]];
+
+    private _elevationMil = 0;
+    private _windageMil = 0;
+    private _source = "none";
+    private _raw = [];
+    private _hasAceScopesFn = !(isNil "ace_scopes_fnc_getAdjustment");
+
+    if !(isNull _unit) then {
+        if (_hasAceScopesFn) then {
+            private _adjustmentResult = [_unit, _weapon, _muzzle] call ace_scopes_fnc_getAdjustment;
+            _raw = _adjustmentResult;
+            if (_adjustmentResult isEqualType [] && { (count _adjustmentResult) >= 2 }) then {
+                _elevationMil = _adjustmentResult # 0;
+                _windageMil = _adjustmentResult # 1;
+                _source = "ace_scopes_fnc_getAdjustment";
+            };
+        };
+
+        if (_source isEqualTo "none") then {
+            private _adjustmentVariable = _unit getVariable ["ace_scopes_adjustment", [[0,0,0],[0,0,0],[0,0,0]]];
+            _raw = _adjustmentVariable;
+            if (_adjustmentVariable isEqualType [] && { (count _adjustmentVariable) > 0 }) then {
+                private _primaryAdjustment = _adjustmentVariable # 0;
+                if (_primaryAdjustment isEqualType [] && { (count _primaryAdjustment) >= 2 }) then {
+                    _elevationMil = _primaryAdjustment # 0;
+                    _windageMil = _primaryAdjustment # 1;
+                    _source = "ace_scopes_adjustment";
+                };
+            };
+        };
+    };
+
+    [
+        ["elevationMil", _elevationMil],
+        ["windageMil", _windageMil],
+        ["source", _source],
+        ["raw", _raw],
+        ["hasAceScopesFn", _hasAceScopesFn]
+    ]
+};
+
+PHEN_CS_fnc_CSS_applyPIPScopeAdjustment = {
+    params [["_dir", [0,0,0]], ["_unit", objNull], ["_weapon", ""], ["_muzzle", ""], ["_scopeAdjustmentTelemetry", []]];
+
+    private _baseDir = vectorNormalized _dir;
+    if ((vectorMagnitude _baseDir) <= 0.001) exitWith { [_dir, [["applied", false], ["reason", "invalid_direction"]]] };
+
+    if (_scopeAdjustmentTelemetry isEqualTo []) then {
+        _scopeAdjustmentTelemetry = [_unit, _weapon, _muzzle] call PHEN_CS_fnc_CSS_getScopeAdjustmentTelemetry;
+    };
+
+    private _elevationMil = [_scopeAdjustmentTelemetry, "elevationMil", 0] call PHEN_CS_fnc_CSS_getPairValue;
+    private _windageMil = [_scopeAdjustmentTelemetry, "windageMil", 0] call PHEN_CS_fnc_CSS_getPairValue;
+    private _source = [_scopeAdjustmentTelemetry, "source", "none"] call PHEN_CS_fnc_CSS_getPairValue;
+    private _mil2deg = 0.05729577951308232;
+    private _yawDeg = _windageMil * _mil2deg;
+    private _pitchDeg = _elevationMil * _mil2deg;
+
+    if (_source isEqualTo "none" || { (abs _yawDeg) < 0.000001 && { (abs _pitchDeg) < 0.000001 } }) exitWith {
+        [
+            _baseDir,
+            [
+                ["applied", false],
+                ["source", _source],
+                ["elevationMil", _elevationMil],
+                ["windageMil", _windageMil],
+                ["elevationDeg", _pitchDeg],
+                ["windageDeg", _yawDeg],
+                ["scopeAdjustmentTelemetry", _scopeAdjustmentTelemetry]
+            ]
+        ]
+    };
+
+    private _ref = [0,0,1];
+    if (abs (_baseDir vectorDotProduct _ref) > 0.98) then { _ref = [0,1,0]; };
+    private _right = vectorNormalized (_baseDir vectorCrossProduct _ref);
+    private _up = vectorNormalized (_right vectorCrossProduct _baseDir);
+    private _dirYaw = vectorNormalized ((_baseDir vectorMultiply (cos _yawDeg)) vectorAdd (_right vectorMultiply (sin _yawDeg)));
+    private _adjustedDir = vectorNormalized ((_dirYaw vectorMultiply (cos _pitchDeg)) vectorAdd (_up vectorMultiply (sin _pitchDeg)));
+
+    [
+        _adjustedDir,
+        [
+            ["applied", true],
+            ["source", _source],
+            ["elevationMil", _elevationMil],
+            ["windageMil", _windageMil],
+            ["elevationDeg", _pitchDeg],
+            ["windageDeg", _yawDeg],
+            ["scopeAdjustmentTelemetry", _scopeAdjustmentTelemetry]
+        ]
+    ]
+};
+
 PHEN_CS_fnc_CSS_getRocketPhase = {
     params [["_elapsed", 0], ["_rocketData", []]];
 
@@ -640,7 +919,8 @@ PHEN_CS_fnc_CSS_getBallisticProfile = {
     private _ammo = getText (_magCfg >> "ammo");
     if (_ammo isEqualTo "") exitWith { [] };
 
-    private _cacheKey = [_ammo, _weapon, _muzzle, _mode, _magazine] call PHEN_CS_fnc_CSS_getBallisticCacheKey;
+    private _aceCacheState = if (call PHEN_CS_fnc_CSS_isACEAdvancedBallisticsEnabled) then { "ace_on" } else { "ace_off" };
+    private _cacheKey = format ["%1|%2", [_ammo, _weapon, _muzzle, _mode, _magazine] call PHEN_CS_fnc_CSS_getBallisticCacheKey, _aceCacheState];
     private _cached = PHEN_CS_CSS_BallisticConfigCache getOrDefault [_cacheKey, []];
     if !(_cached isEqualTo []) exitWith { +_cached };
 
@@ -686,6 +966,13 @@ PHEN_CS_fnc_CSS_getBallisticProfile = {
     };
     private _rocketPhaseData = [_initTime, _thrustTime, _thrust, _maxSpeed, _sideAirFriction, _projectileFamily] call PHEN_CS_fnc_CSS_getPredictiveRocketData;
     _rocketPhaseData params ["_rocketData", "_rocketPhaseNormalization", "_rocketPredictiveInitTime", "_rocketConfigInitTime"];
+    private _aceDecision = [_ammo, _ammoCfg, _projectileFamily] call PHEN_CS_fnc_CSS_getACEBallisticDecision;
+    private _aceData = [_ammo, _ammoCfg, _projectileFamily, _aceDecision] call PHEN_CS_fnc_CSS_getACEBallisticData;
+    private _ballisticsModel = if (_aceData isEqualTo []) then { "vanilla" } else { "ace_advanced" };
+    private _aceBC = [_aceData, "bc", 0] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceDragModel = [_aceData, "dragModel", 0] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceVelocityBoundaries = [_aceData, "velocityBoundaries", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceDecisionReason = [_aceDecision, "aceDecisionReason", ""] call PHEN_CS_fnc_CSS_getPairValue;
 
     private _profile = [
         ["cacheKey", _cacheKey],
@@ -703,6 +990,29 @@ PHEN_CS_fnc_CSS_getBallisticProfile = {
         ["isLauncher", _isLauncher],
         ["isSupported", _isSupported],
         ["projectileFamily", _projectileFamily],
+        ["ballisticsModel", _ballisticsModel],
+        ["aceDecision", _aceDecision],
+        ["aceDecisionReason", _aceDecisionReason],
+        ["aceEnabled", [_aceDecision, "aceEnabled", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["isACEAmmo", [_aceDecision, "isACEAmmo", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["hasACEConfig", [_aceDecision, "hasACEConfig", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["ammoCfgClass", [_aceDecision, "ammoCfgClass", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["ammoCfgIsClass", [_aceDecision, "ammoCfgIsClass", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceBallisticCoefficientsIsArray", [_aceDecision, "aceBallisticCoefficientsIsArray", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceDragModelIsNumber", [_aceDecision, "aceDragModelIsNumber", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["useACE", [_aceDecision, "useACE", false] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceData", _aceData],
+        ["aceBC", _aceBC],
+        ["aceDragModel", _aceDragModel],
+        ["aceVelocityBoundaries", _aceVelocityBoundaries],
+        ["aceBallisticCoefficients", [_aceData, "ballisticCoefficients", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceStandardAtmosphere", [_aceData, "standardAtmosphere", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceMuzzleVelocities", [_aceData, "muzzleVelocities", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceBarrelLengths", [_aceData, "barrelLengths", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceTwistDirection", [_aceData, "twistDirection", ""] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceStabilityFactor", [_aceData, "stabilityFactor", 0] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceLastBC", [_aceData, "lastBC", _aceBC] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceLastRetardation", [_aceData, "lastRetardation", 0] call PHEN_CS_fnc_CSS_getPairValue],
         ["rocketData", _rocketData],
         ["initTime", _initTime],
         ["rocketConfigInitTime", _rocketConfigInitTime],
@@ -796,7 +1106,7 @@ PHEN_CS_fnc_CSS_getAimOrigin = {
 };
 
 PHEN_CS_fnc_CSS_getAimFrame = {
-    params ["_unit", "_weapon", "_speed", "_zeroDistance", "_gravityCoef", ["_applyZeroing", true], ["_ballisticProfile", []]];
+    params ["_unit", "_weapon", "_speed", "_zeroDistance", "_gravityCoef", ["_applyZeroing", true], ["_ballisticProfile", []], ["_scopeAdjustmentTelemetry", []]];
 
     private _weaponDir = vectorNormalized (_unit weaponDirection _weapon);
     private _fromWeapon = (vectorMagnitude _weaponDir) > 0.001;
@@ -820,6 +1130,16 @@ PHEN_CS_fnc_CSS_getAimFrame = {
         };
         _zeroingApplied = true;
     };
+
+    private _scopeMuzzle = if (_ballisticProfile isEqualType [] && { !(_ballisticProfile isEqualTo []) }) then {
+        [_ballisticProfile, "muzzle", currentMuzzle _unit] call PHEN_CS_fnc_CSS_getPairValue
+    } else {
+        currentMuzzle _unit
+    };
+    private _scopeAdjustment = [_dir, _unit, _weapon, _scopeMuzzle, _scopeAdjustmentTelemetry] call PHEN_CS_fnc_CSS_applyPIPScopeAdjustment;
+    _scopeAdjustment params ["_scopeAdjustedDir", "_scopeAdjustmentMeta"];
+    _dir = _scopeAdjustedDir;
+    _zeroingTelemetry = [_zeroingTelemetry, "pipScopeAdjustment", _scopeAdjustmentMeta] call PHEN_CS_fnc_CSS_setPairValue;
     _dir = vectorNormalized _dir;
 
     _originData = [_unit, _dir] call PHEN_CS_fnc_CSS_getAimOrigin;
@@ -943,6 +1263,78 @@ PHEN_CS_fnc_CSS_getCoriolisAccel = {
     _cross vectorMultiply -2
 };
 
+PHEN_CS_fnc_CSS_calculateACERetardation = {
+    params [["_dragModel", 1], ["_dragCoefficient", 0], ["_velocity", 0]];
+
+    if (_dragCoefficient <= 0 || { _velocity <= 0 }) exitWith { 0 };
+
+    private _velocityFps = _velocity * 3.2808399;
+    private _table = switch (_dragModel) do {
+        case 1: {
+            [
+                [4230,0.0001477404177730177,1.9565],[3680,0.0001920339268755614,1.925],[3450,0.0002894751026819746,1.875],
+                [3295,0.0004349905111115636,1.825],[3130,0.0006520421871892662,1.775],[2960,0.0009748073694078696,1.725],
+                [2830,0.001453721560187286,1.675],[2680,0.002162887202930376,1.625],[2460,0.003209559783129881,1.575],
+                [2225,0.003904368218691249,1.55],[2015,0.003222942271262336,1.575],[1890,0.002203329542297809,1.625],
+                [1810,0.001511001028891904,1.675],[1730,0.0008609957592468259,1.75],[1595,0.0004086146797305117,1.85],
+                [1520,0.0001954473210037398,1.95],[1420,0.00005431896266462351,2.125],[1360,0.000008847742581674416,2.375],
+                [1315,0.000001456922328720298,2.625],[1280,0.0000002419485191895565,2.875],[1220,0.00000001657956321067612,3.25],
+                [1185,0.0000000004745469537157371,3.75],[1150,0.00000000001379746590025088,4.25],[1100,0.0000000000004070157961147882,4.75],
+                [1060,0.00000000000002938236954847331,5.125],[1025,0.00000000000001228597370774746,5.25],[980,0.00000000000002916938264100495,5.125],
+                [945,0.0000000000003855099424807451,4.75],[905,0.00000000001185097045689854,4.25],[860,0.0000000003566129470974951,3.75],
+                [810,0.00000001045513263966272,3.25],[780,0.0000001291159200846216,2.875],[750,0.0000006824429329105383,2.625],
+                [700,0.000003569169672385163,2.375],[640,0.00001839015095899579,2.125],[600,0.00005711174688734240,1.950],
+                [550,0.00009226557091973427,1.875],[250,0.00009337991957131389,1.875],[100,0.00007225247327590413,1.925],
+                [65,0.00005792684957074546,1.975],[0,0.00005206214107320588,2.000]
+            ]
+        };
+        case 2: {
+            [[1674,0.0079470052136733,1.36999902851493],[1172,0.00100419763721974,1.65392237010294],[1060,0.0000000000000000000000715571228255369,7.91913562392361],[949,0.000000000139589807205091,3.81439537623717],[670,0.000234364342818625,1.71869536324748],[335,0.000177962438921838,1.76877550388679],[0,0.0000518033561289704,1.98160270524632]]
+        };
+        case 5: {
+            [[1730,0.00724854775171929,1.41538574492812],[1228,0.0000350563361516117,2.13077307854948],[1116,0.000000000000184029481181151,4.81927320350395],[1004,0.000000000000000000000134713064017409,7.8100555281422],[837,0.000000103965974081168,2.84204791809926],[335,0.0001093015938698234,1.81096361579504],[0,0.0000351963178524273,2.00477856801111]]
+        };
+        case 6: {
+            [[3236,0.0455384883480781,1.15997674041274],[2065,0.07167261849653769,1.10704436538885],[1311,0.00166676386084348,1.60085100195952],[1144,0.000000101482730119215,2.9569674731838],[1004,0.00000000000000000431542773103552,6.34106317069757],[670,0.0000204835650496866,2.11688446325998],[0,0.0000750912466084823,1.92031057847052]]
+        };
+        case 7: {
+            [[4200,0.00000000129081656775919,3.24121295355962],[3000,0.0171422231434847,1.27907168025204],[1470,0.00233355948302505,1.52693913274526],[1260,0.000797592111627665,1.67688974440324],[1110,0.00000000000571086414289273,4.3212826264889],[960,0.0000000000000000302865108244904,5.99074203776707],[670,0.00000752285155782535,2.1738019851075],[540,0.0000131766281225189,2.08774690257991],[0,0.0000134504843776525,2.08702306738884]]
+        };
+        case 8: {
+            [[3571,0.0112263766252305,1.33207346655961],[1841,0.0167252613732636,1.28662041261785],[1120,0.00220172456619625,1.55636358091189],[1088,0.00000000000000020538037167098,5.80410776994789],[976,0.00000000000592182174254121,4.29275576134191],[0,0.000043917343795117,1.99978116283334]]
+        };
+        default { [] };
+    };
+
+    private _rowIndex = _table findIf { _velocityFps > (_x # 0) };
+    if (_rowIndex < 0 || { _velocityFps >= 10000 }) exitWith { 0 };
+
+    private _row = _table # _rowIndex;
+    private _a = _row # 1;
+    private _m = _row # 2;
+
+    (_a * (_velocityFps ^ _m) / _dragCoefficient) / 3.2808399
+};
+
+PHEN_CS_fnc_CSS_getACEBallisticDragAccel = {
+    params [["_vel", [0,0,0]], ["_aceData", []]];
+
+    private _speedNow = vectorMagnitude _vel;
+    if (_speedNow <= 0.001 || { _aceData isEqualTo [] }) exitWith { [0,0,0] };
+
+    private _dragModel = [_aceData, "dragModel", 1] call PHEN_CS_fnc_CSS_getPairValue;
+    private _coefficients = [_aceData, "ballisticCoefficients", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _velocityBoundaries = [_aceData, "velocityBoundaries", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _bc = [_coefficients, _velocityBoundaries, _speedNow] call PHEN_CS_fnc_CSS_getACEBallisticCoefficient;
+    private _retardation = [_dragModel, _bc, _speedNow] call PHEN_CS_fnc_CSS_calculateACERetardation;
+
+    [_aceData, "lastBC", _bc] call PHEN_CS_fnc_CSS_setPairValue;
+    [_aceData, "lastRetardation", _retardation] call PHEN_CS_fnc_CSS_setPairValue;
+
+    if (_retardation <= 0) exitWith { [0,0,0] };
+    (vectorNormalized _vel) vectorMultiply (-_retardation)
+};
+
 PHEN_CS_fnc_CSS_stepProjectileVelocity = {
     params [
         ["_dir", [0,0,0]],
@@ -952,7 +1344,10 @@ PHEN_CS_fnc_CSS_stepProjectileVelocity = {
         ["_projectileFamily", "bullet"],
         ["_airFriction", 0],
         ["_gravityCoef", 1],
-        ["_rocketData", []]
+        ["_rocketData", []],
+        ["_ballisticsModel", "vanilla"],
+        ["_aceData", []],
+        ["_posASL", []]
     ];
 
     private _nextVel = _vel;
@@ -961,8 +1356,17 @@ PHEN_CS_fnc_CSS_stepProjectileVelocity = {
 
     switch (_projectileFamily) do {
         case "bullet": {
-            if (_airFriction != 0 && { _speedNow > 0 }) then {
-                _nextVel = _nextVel vectorAdd ((_nextVel vectorMultiply (_speedNow * _airFriction)) vectorMultiply _dt);
+            if (_ballisticsModel isEqualTo "ace_advanced" && { !(_aceData isEqualTo []) }) then {
+                private _windVector = [_posASL] call PHEN_CS_fnc_CSS_getPIPWindVector;
+                private _relativeVel = _nextVel vectorAdd (_windVector vectorMultiply -1);
+                private _aceDragAccel = [_relativeVel, _aceData] call PHEN_CS_fnc_CSS_getACEBallisticDragAccel;
+                if ((vectorMagnitude _aceDragAccel) > 0) then {
+                    _nextVel = _nextVel vectorAdd (_aceDragAccel vectorMultiply _dt);
+                };
+            } else {
+                if (_airFriction != 0 && { _speedNow > 0 }) then {
+                    _nextVel = _nextVel vectorAdd ((_nextVel vectorMultiply (_speedNow * _airFriction)) vectorMultiply _dt);
+                };
             };
         };
         case "shell": {
@@ -1002,6 +1406,135 @@ PHEN_CS_fnc_CSS_stepProjectileVelocity = {
     _nextVel
 };
 
+PHEN_CS_fnc_CSS_isPIP40mmGLProfile = {
+    params [["_profile", []], ["_projectileFamily", ""]];
+
+    private _family = toLower _projectileFamily;
+    if (_profile isEqualType [] && { !(_profile isEqualTo []) }) then {
+        _family = toLower ([_profile, "projectileFamily", _family] call PHEN_CS_fnc_CSS_getPairValue);
+    };
+    if !(_family isEqualTo "shell") exitWith { false };
+
+    private _magazine = if (_profile isEqualType [] && { !(_profile isEqualTo []) }) then {
+        [_profile, "magazine", ""] call PHEN_CS_fnc_CSS_getPairValue
+    } else {
+        ""
+    };
+
+    _magazine in ["1Rnd_HE_Grenade_shell", "3Rnd_HE_Grenade_shell"]
+};
+
+PHEN_CS_fnc_CSS_tracePIP40mmGLProfile = {
+    params ["_unit", "_aimFrame", "_profile", ["_checkCollision", true]];
+
+    if (isNull _unit || { (count _aimFrame) < 2 }) exitWith { [[], "invalid_aim_frame", [], [], 0, 0, 0, [], ""] };
+    if !([_profile, "shell"] call PHEN_CS_fnc_CSS_isPIP40mmGLProfile) exitWith { [[], "unsupported_pip_40mm", [], [], 0, 0, 0, [], ""] };
+
+    _aimFrame params ["_startASL", "_sightDir"];
+    if !(_startASL isEqualType [] && { (count _startASL) >= 3 }) exitWith { [[], "invalid_start", [], [], 0, 0, 0, [], ""] };
+    if !(_sightDir isEqualType [] && { (count _sightDir) >= 3 } && { (vectorMagnitude _sightDir) > 0.001 }) exitWith { [[], "invalid_direction", [], [], 0, 0, 0, [], ""] };
+
+    private _weapon = [_profile, "weapon", currentWeapon _unit] call PHEN_CS_fnc_CSS_getPairValue;
+    private _muzzle = [_profile, "muzzle", currentMuzzle _unit] call PHEN_CS_fnc_CSS_getPairValue;
+    private _weaponCfg = configFile >> "CfgWeapons" >> _weapon;
+    private _muzzleCfg = if (_muzzle in ["", "this", _weapon]) then { _weaponCfg } else { _weaponCfg >> _muzzle };
+    if !(isClass _muzzleCfg) then { _muzzleCfg = _weaponCfg; };
+
+    private _muzzlePos = getText (_muzzleCfg >> "muzzlePos");
+    private _muzzleEnd = getText (_muzzleCfg >> "muzzleEnd");
+    if (_muzzlePos isEqualTo "" || { _muzzleEnd isEqualTo "" }) then {
+        _muzzlePos = getText (_weaponCfg >> "muzzlePos");
+        _muzzleEnd = getText (_weaponCfg >> "muzzleEnd");
+    };
+
+    private _p0 = _startASL;
+    private _dir = vectorNormalized _sightDir;
+    if !(_muzzlePos isEqualTo "" || { _muzzleEnd isEqualTo "" }) then {
+        private _p0Local = _unit selectionPosition [_muzzlePos, "Memory"];
+        private _p1Local = _unit selectionPosition [_muzzleEnd, "Memory"];
+        if !(_p0Local isEqualTo [0,0,0] && { _p1Local isEqualTo [0,0,0] }) then {
+            private _m0 = _unit modelToWorldWorld _p0Local;
+            private _m1 = _unit modelToWorldWorld _p1Local;
+            if (_m0 isEqualType [] && { (count _m0) >= 3 } && { _m1 isEqualType [] } && { (count _m1) >= 3 } && { (_m0 distance _m1) > 0.001 }) then {
+                _p0 = _m0;
+                _dir = vectorNormalized (_m1 vectorAdd (_m0 vectorMultiply -1));
+            };
+        };
+    };
+
+    private _weaponDir = _unit weaponDirection _weapon;
+    if (_weaponDir isEqualType [] && { (count _weaponDir) >= 3 } && { (vectorMagnitude _weaponDir) > 0.001 } && { (_weaponDir vectorDotProduct _dir) < 0 }) then {
+        _dir = _dir vectorMultiply -1;
+    };
+
+    private _scopeTelemetry = [_unit, _weapon, _muzzle] call PHEN_CS_fnc_CSS_getScopeAdjustmentTelemetry;
+    private _scopeAdjustment = [_dir, _unit, _weapon, _muzzle, _scopeTelemetry] call PHEN_CS_fnc_CSS_applyPIPScopeAdjustment;
+    _dir = _scopeAdjustment # 0;
+
+    private _v0 = 80;
+    private _af = -0.001;
+    private _gravity = [0,0,-9.81];
+    private _dt = 0.025;
+    private _maxRange = 1000;
+    private _vel = _dir vectorMultiply _v0;
+    private _pos = _p0;
+    private _hit = [];
+    private _hitReason = "no_intersection";
+    private _steps = 0;
+    private _elapsed = 0;
+    private _trajectoryIgnoredHitCount = 0;
+    private _trajectoryFirstIgnoredHit = [];
+    private _trajectoryIgnoredHitReason = "";
+
+    while { _steps <= 50000 && { _hit isEqualTo [] } && { (_p0 distance _pos) <= _maxRange } } do {
+        private _speed = vectorMagnitude _vel;
+        private _accel = (_vel vectorMultiply (_af * _speed)) vectorAdd _gravity;
+        private _next = _pos vectorAdd (_vel vectorMultiply _dt);
+        private _nextVel = _vel vectorAdd (_accel vectorMultiply _dt);
+        _elapsed = _elapsed + _dt;
+
+        if ((_p0 distance _next) > _maxRange) then {
+            _pos = _next;
+            _vel = _nextVel;
+            _hitReason = "range_limit";
+            _steps = 50001;
+        } else {
+            if (_checkCollision) then {
+                private _segHits = lineIntersectsSurfaces [_pos, _next, _unit, vehicle _unit, true, 3, "FIRE", "GEOM", true];
+                _segHits = _segHits select {
+                    private _obj = _x # 2;
+                    isNull _obj || { !(_obj isKindOf "Bush") && { !(_obj isKindOf "SmallTree") } }
+                };
+                if !(_segHits isEqualTo []) then {
+                    private _hitStatus = [_p0, _segHits # 0, _elapsed, "shell"] call PHEN_CS_fnc_CSS_getTrajectoryHitStatus;
+                    if (_hitStatus # 0) then {
+                        _hitReason = _hitStatus # 1;
+                        _hit = _segHits # 0;
+                    } else {
+                        _hitReason = _hitStatus # 1;
+                        if (_hitReason isEqualTo "early_trajectory_collision") then {
+                            _trajectoryIgnoredHitCount = _trajectoryIgnoredHitCount + 1;
+                            if (_trajectoryFirstIgnoredHit isEqualTo []) then { _trajectoryFirstIgnoredHit = _segHits # 0; };
+                            _trajectoryIgnoredHitReason = _hitReason;
+                        };
+                        _pos = _next;
+                        _vel = _nextVel;
+                    };
+                } else {
+                    _pos = _next;
+                    _vel = _nextVel;
+                };
+            } else {
+                _pos = _next;
+                _vel = _nextVel;
+            };
+            _steps = _steps + 1;
+        };
+    };
+
+    [_hit, _hitReason, _pos, _vel, _steps, _elapsed, _trajectoryIgnoredHitCount, _trajectoryFirstIgnoredHit, _trajectoryIgnoredHitReason]
+};
+
 PHEN_CS_fnc_CSS_traceBallisticProfile = {
     params ["_unit", "_aimFrame", "_profile", ["_checkCollision", true]];
 
@@ -1018,8 +1551,13 @@ PHEN_CS_fnc_CSS_traceBallisticProfile = {
     private _timeToLive = [_profile, "timeToLive", 5] call PHEN_CS_fnc_CSS_getPairValue;
     private _projectileFamily = [_profile, "projectileFamily", "bullet"] call PHEN_CS_fnc_CSS_getPairValue;
     private _rocketData = [_profile, "rocketData", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _ballisticsModel = [_profile, "ballisticsModel", "vanilla"] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceData = [_profile, "aceData", []] call PHEN_CS_fnc_CSS_getPairValue;
     private _dt = [_profile, "simulationStep", 0.025] call PHEN_CS_fnc_CSS_getPairValue;
     _dt = (_dt max 0.01) min 0.05;
+    if ([_profile, _projectileFamily] call PHEN_CS_fnc_CSS_isPIP40mmGLProfile) exitWith {
+        [_unit, _aimFrame, _profile, _checkCollision] call PHEN_CS_fnc_CSS_tracePIP40mmGLProfile
+    };
     private _vel = _dir vectorMultiply _speed;
     private _hit = [];
     private _hitReason = "no_intersection";
@@ -1032,7 +1570,7 @@ PHEN_CS_fnc_CSS_traceBallisticProfile = {
 
     while { _i <= _maxSteps && { _hit isEqualTo [] } && { (_startASL distance _pos) <= 5000 } } do {
         _elapsed = _i * _dt;
-        _vel = [_dir, _vel, _elapsed, _dt, _projectileFamily, _airFriction, _gravityCoef, _rocketData] call PHEN_CS_fnc_CSS_stepProjectileVelocity;
+        _vel = [_dir, _vel, _elapsed, _dt, _projectileFamily, _airFriction, _gravityCoef, _rocketData, _ballisticsModel, _aceData, _pos] call PHEN_CS_fnc_CSS_stepProjectileVelocity;
         private _next = _pos vectorAdd (_vel vectorMultiply _dt);
 
         if (_checkCollision) then {
@@ -1244,11 +1782,21 @@ PHEN_CS_fnc_CSS_getAimReuseAngleDeg = {
 };
 
 PHEN_CS_fnc_CSS_getAimCacheKey = {
-    params ["_unit", "_weapon", "_muzzle", "_mode", "_magazine", "_ammo", "_zeroDistance", "_projectileFamily", "_speed", "_simulationStep", "_applyZeroing", "_calibrationApplied"];
+    params ["_unit", "_weapon", "_muzzle", "_mode", "_magazine", "_ammo", "_zeroDistance", "_projectileFamily", "_speed", "_simulationStep", "_applyZeroing", "_calibrationApplied", ["_scopeAdjustmentTelemetry", []], ["_windTelemetry", []]];
 
     private _advancedMode = missionNamespace getVariable ["PHEN_CS_CSS_BallisticAdvancedMode", PHEN_CS_CSS_BallisticAdvancedMode];
+    private _scopeElevationMil = [_scopeAdjustmentTelemetry, "elevationMil", 0] call PHEN_CS_fnc_CSS_getPairValue;
+    private _scopeWindageMil = [_scopeAdjustmentTelemetry, "windageMil", 0] call PHEN_CS_fnc_CSS_getPairValue;
+    private _scopeSource = [_scopeAdjustmentTelemetry, "source", "none"] call PHEN_CS_fnc_CSS_getPairValue;
+    private _windVector = [_windTelemetry, "aceWind", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _windSource = [_windTelemetry, "aceWindSource", "none"] call PHEN_CS_fnc_CSS_getPairValue;
+    if !(_windVector isEqualType [] && { (count _windVector) >= 3 } && { !(_windSource isEqualTo "none") }) then {
+        _windVector = [_windTelemetry, "engineWind", [0,0,0]] call PHEN_CS_fnc_CSS_getPairValue;
+        _windSource = "engine";
+    };
+    if !(_windVector isEqualType [] && { (count _windVector) >= 3 }) then { _windVector = [0,0,0]; };
     format [
-        "%1|%2|%3|%4|%5|%6|%7|%8|%9|%10|%11|%12|%13",
+        "%1|%2|%3|%4|%5|%6|%7|%8|%9|%10|%11|%12|%13|scope:%14:%15:%16|wind:%17:%18:%19:%20:%21",
         _weapon,
         _muzzle,
         _mode,
@@ -1261,7 +1809,15 @@ PHEN_CS_fnc_CSS_getAimCacheKey = {
         round (_simulationStep * 1000),
         _applyZeroing,
         _calibrationApplied,
-        _advancedMode
+        _advancedMode,
+        _scopeSource,
+        round (_scopeElevationMil * 1000),
+        round (_scopeWindageMil * 1000),
+        _windSource,
+        round ((_windVector # 0) * 100),
+        round ((_windVector # 1) * 100),
+        round ((_windVector # 2) * 100),
+        round ((vectorMagnitude _windVector) * 100)
     ]
 };
 
@@ -1474,6 +2030,8 @@ PHEN_CS_fnc_CSS_traceZeroingProbe = {
     private _timeToLive = [_profile, "timeToLive", 5] call PHEN_CS_fnc_CSS_getPairValue;
     private _projectileFamily = [_profile, "projectileFamily", "bullet"] call PHEN_CS_fnc_CSS_getPairValue;
     private _rocketData = [_profile, "rocketData", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _ballisticsModel = [_profile, "ballisticsModel", "vanilla"] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceData = [_profile, "aceData", []] call PHEN_CS_fnc_CSS_getPairValue;
     private _dt = [_profile, "simulationStep", 0.025] call PHEN_CS_fnc_CSS_getPairValue;
     _dt = (_dt max 0.01) min 0.05;
 
@@ -1492,7 +2050,7 @@ PHEN_CS_fnc_CSS_traceZeroingProbe = {
         _elapsed = _i * _dt;
         private _previousPos = _pos;
         private _previousTravel = (_previousPos vectorAdd (_startASL vectorMultiply -1)) vectorDotProduct _sightDir;
-        _vel = [_dir, _vel, _elapsed, _dt, _projectileFamily, _airFriction, _gravityCoef, _rocketData] call PHEN_CS_fnc_CSS_stepProjectileVelocity;
+        _vel = [_dir, _vel, _elapsed, _dt, _projectileFamily, _airFriction, _gravityCoef, _rocketData, _ballisticsModel, _aceData, _pos] call PHEN_CS_fnc_CSS_stepProjectileVelocity;
         private _next = _pos vectorAdd (_vel vectorMultiply _dt);
         private _travel = (_next vectorAdd (_startASL vectorMultiply -1)) vectorDotProduct _sightDir;
 
@@ -1656,6 +2214,33 @@ PHEN_CS_fnc_CSS_logAimCorrectionDebug = {
         ["postCorrectionAimPointASL", [_correction, "postCorrectionAimPointASL", []] call PHEN_CS_fnc_CSS_getPairValue],
         ["preCorrectionHitReason", [_correction, "preCorrectionHitReason", ""] call PHEN_CS_fnc_CSS_getPairValue],
         ["postCorrectionHitReason", [_correction, "postCorrectionHitReason", ""] call PHEN_CS_fnc_CSS_getPairValue]
+    ]];
+    false
+};
+
+PHEN_CS_fnc_CSS_logAimDrawDebug = {
+    params ["_unit", "_impactPosASL", "_drawASL", "_label", "_method"];
+
+    if !(missionNamespace getVariable ["PHEN_CS_DebugMode", false]) exitWith { false };
+    if (diag_tickTime < (PHEN_CS_CSS_AimDrawDebugLastLog + 0.75)) exitWith { false };
+
+    PHEN_CS_CSS_AimDrawDebugLastLog = diag_tickTime;
+    private _validImpact = _impactPosASL isEqualType [] && { (count _impactPosASL) >= 3 };
+    private _validDraw = _drawASL isEqualType [] && { (count _drawASL) >= 3 };
+    private _drawDeltaASL = if (_validImpact && { _validDraw }) then { _drawASL vectorAdd (_impactPosASL vectorMultiply -1) } else { [] };
+    private _drawDeltaDistance = if (_validImpact && { _validDraw }) then { _impactPosASL distance _drawASL } else { -1 };
+    private _drawAGL = if (_validDraw) then { ASLToAGL _drawASL } else { [] };
+    private _screen = if (_validDraw) then { worldToScreen _drawAGL } else { [] };
+
+    diag_log format ["[PHEN_CS][ArgusAimDraw] draw | %1", [
+        ["predictedImpactASL", _impactPosASL],
+        ["drawASL", _drawASL],
+        ["drawAGL", _drawAGL],
+        ["drawDeltaASL", _drawDeltaASL],
+        ["drawDeltaDistance", _drawDeltaDistance],
+        ["screen", _screen],
+        ["label", _label],
+        ["method", _method]
     ]];
     false
 };
@@ -2151,6 +2736,25 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
     private _traceEndVelocity = [_predictionMeta, "traceEndVelocity", []] call PHEN_CS_fnc_CSS_getPairValue;
     private _rocketPhaseAtLaunch = if (_projectileFamily in ["rocket", "missile"]) then { [0, _rocketData] call PHEN_CS_fnc_CSS_getRocketPhase } else { "" };
     private _rocketActiveWindow = if ((count _rocketData) >= 2) then { [_rocketData # 0, (_rocketData # 0) + (_rocketData # 1)] } else { [] };
+    private _aceDataLog = [_ballisticProfile, "aceData", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceDecisionLog = [_ballisticProfile, "aceDecision", []] call PHEN_CS_fnc_CSS_getPairValue;
+    private _ballisticsModelLog = [_ballisticProfile, "ballisticsModel", "vanilla"] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceBCLog = [_aceDataLog, "bc", [_ballisticProfile, "aceBC", 0] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceDragModelLog = [_aceDataLog, "dragModel", [_ballisticProfile, "aceDragModel", 0] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceVelocityBoundariesLog = [_aceDataLog, "velocityBoundaries", [_ballisticProfile, "aceVelocityBoundaries", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceLastBCLog = [_aceDataLog, "lastBC", _aceBCLog] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceLastRetardationLog = [_aceDataLog, "lastRetardation", 0] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceDecisionReasonLog = [_aceDecisionLog, "aceDecisionReason", [_ballisticProfile, "aceDecisionReason", ""] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceEnabledLog = [_aceDecisionLog, "aceEnabled", [_ballisticProfile, "aceEnabled", false] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _isACEAmmoLog = [_aceDecisionLog, "isACEAmmo", [_ballisticProfile, "isACEAmmo", false] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _hasACEConfigLog = [_aceDecisionLog, "hasACEConfig", [_ballisticProfile, "hasACEConfig", false] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _ammoCfgClassLog = [_aceDecisionLog, "ammoCfgClass", [_ballisticProfile, "ammoCfgClass", ""] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _ammoCfgIsClassLog = [_aceDecisionLog, "ammoCfgIsClass", [_ballisticProfile, "ammoCfgIsClass", false] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceBallisticCoefficientsIsArrayLog = [_aceDecisionLog, "aceBallisticCoefficientsIsArray", [_ballisticProfile, "aceBallisticCoefficientsIsArray", false] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _aceDragModelIsNumberLog = [_aceDecisionLog, "aceDragModelIsNumber", [_ballisticProfile, "aceDragModelIsNumber", false] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _useACELog = [_aceDecisionLog, "useACE", [_ballisticProfile, "useACE", false] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue;
+    private _windTelemetryLog = [_projectileStartASL] call PHEN_CS_fnc_CSS_getWindTelemetry;
+    private _scopeAdjustmentTelemetryLog = [_unit, _weapon, _muzzle] call PHEN_CS_fnc_CSS_getScopeAdjustmentTelemetry;
     private _shotContext = [
         ["shotId", _shotId],
         ["shotTickTime", _shotTickTime],
@@ -2170,9 +2774,33 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
         ["firedFrame0Velocity", _projectileVelocity],
         ["shotInfo", _shotInfo],
         ["projectileFamily", _projectileFamily],
+        ["ballisticsModel", _ballisticsModelLog],
+        ["aceDecision", _aceDecisionLog],
+        ["aceDecisionReason", _aceDecisionReasonLog],
+        ["aceEnabled", _aceEnabledLog],
+        ["isACEAmmo", _isACEAmmoLog],
+        ["hasACEConfig", _hasACEConfigLog],
+        ["ammoCfgClass", _ammoCfgClassLog],
+        ["ammoCfgIsClass", _ammoCfgIsClassLog],
+        ["aceBallisticCoefficientsIsArray", _aceBallisticCoefficientsIsArrayLog],
+        ["aceDragModelIsNumber", _aceDragModelIsNumberLog],
+        ["useACE", _useACELog],
         ["simulation", [_ballisticProfile, "simulation", ""] call PHEN_CS_fnc_CSS_getPairValue],
         ["speed", [_ballisticProfile, "speed", 0] call PHEN_CS_fnc_CSS_getPairValue],
         ["airFriction", [_ballisticProfile, "airFriction", 0] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceBC", _aceBCLog],
+        ["aceDragModel", _aceDragModelLog],
+        ["aceVelocityBoundaries", _aceVelocityBoundariesLog],
+        ["aceBallisticCoefficients", [_aceDataLog, "ballisticCoefficients", [_ballisticProfile, "aceBallisticCoefficients", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceStandardAtmosphere", [_aceDataLog, "standardAtmosphere", [_ballisticProfile, "aceStandardAtmosphere", ""] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceMuzzleVelocities", [_aceDataLog, "muzzleVelocities", [_ballisticProfile, "aceMuzzleVelocities", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceBarrelLengths", [_aceDataLog, "barrelLengths", [_ballisticProfile, "aceBarrelLengths", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceTwistDirection", [_aceDataLog, "twistDirection", [_ballisticProfile, "aceTwistDirection", ""] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceStabilityFactor", [_aceDataLog, "stabilityFactor", [_ballisticProfile, "aceStabilityFactor", 0] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceLastBC", _aceLastBCLog],
+        ["aceLastRetardation", _aceLastRetardationLog],
+        ["windTelemetry", _windTelemetryLog],
+        ["scopeAdjustmentTelemetry", _scopeAdjustmentTelemetryLog],
         ["gravityCoef", [_ballisticProfile, "gravityCoef", 1] call PHEN_CS_fnc_CSS_getPairValue],
         ["timeToLive", [_ballisticProfile, "timeToLive", 0] call PHEN_CS_fnc_CSS_getPairValue],
         ["rocketData", _rocketData],
@@ -2251,9 +2879,31 @@ PHEN_CS_fnc_CSS_onFiredDebug = {
         ["magazine", _magazine],
         ["ammo", _ammo],
         ["projectileFamily", _projectileFamily],
+        ["ballisticsModel", _ballisticsModelLog],
+        ["aceDecisionReason", _aceDecisionReasonLog],
+        ["aceEnabled", _aceEnabledLog],
+        ["isACEAmmo", _isACEAmmoLog],
+        ["hasACEConfig", _hasACEConfigLog],
+        ["ammoCfgClass", _ammoCfgClassLog],
+        ["ammoCfgIsClass", _ammoCfgIsClassLog],
+        ["aceBallisticCoefficientsIsArray", _aceBallisticCoefficientsIsArrayLog],
+        ["aceDragModelIsNumber", _aceDragModelIsNumberLog],
+        ["useACE", _useACELog],
+        ["aceDecision", _aceDecisionLog],
         ["simulation", [_ballisticProfile, "simulation", ""] call PHEN_CS_fnc_CSS_getPairValue],
         ["speed", [_ballisticProfile, "speed", 0] call PHEN_CS_fnc_CSS_getPairValue],
         ["airFriction", [_ballisticProfile, "airFriction", 0] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceBC", _aceBCLog],
+        ["aceDragModel", _aceDragModelLog],
+        ["aceVelocityBoundaries", _aceVelocityBoundariesLog],
+        ["aceBallisticCoefficients", [_aceDataLog, "ballisticCoefficients", [_ballisticProfile, "aceBallisticCoefficients", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceStandardAtmosphere", [_aceDataLog, "standardAtmosphere", [_ballisticProfile, "aceStandardAtmosphere", ""] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceMuzzleVelocities", [_aceDataLog, "muzzleVelocities", [_ballisticProfile, "aceMuzzleVelocities", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceBarrelLengths", [_aceDataLog, "barrelLengths", [_ballisticProfile, "aceBarrelLengths", []] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceTwistDirection", [_aceDataLog, "twistDirection", [_ballisticProfile, "aceTwistDirection", ""] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceStabilityFactor", [_aceDataLog, "stabilityFactor", [_ballisticProfile, "aceStabilityFactor", 0] call PHEN_CS_fnc_CSS_getPairValue] call PHEN_CS_fnc_CSS_getPairValue],
+        ["aceLastBC", _aceLastBCLog],
+        ["aceLastRetardation", _aceLastRetardationLog],
         ["gravityCoef", [_ballisticProfile, "gravityCoef", 1] call PHEN_CS_fnc_CSS_getPairValue],
         ["timeToLive", [_ballisticProfile, "timeToLive", 0] call PHEN_CS_fnc_CSS_getPairValue],
         ["rocketData", _rocketData],
@@ -2484,8 +3134,11 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         _applyZeroing = [_calibration, _applyZeroing] call PHEN_CS_fnc_CSS_calibrationWantsZeroing;
     };
 
+    private _startTelemetryASL = getPosASL _unit;
+    private _windTelemetry = [_startTelemetryASL] call PHEN_CS_fnc_CSS_getWindTelemetry;
+    private _scopeAdjustmentTelemetry = [_unit, _weapon, _muzzle] call PHEN_CS_fnc_CSS_getScopeAdjustmentTelemetry;
     private _aimInputDir = [_unit, _weapon] call PHEN_CS_fnc_CSS_getAimInputDirection;
-    private _aimCacheKey = [_unit, _weapon, _muzzle, _mode, _magazine, _ammo, _zeroDistance, _projectileFamily, _speed, _simulationStep, _applyZeroing, _calibrationApplied] call PHEN_CS_fnc_CSS_getAimCacheKey;
+    private _aimCacheKey = [_unit, _weapon, _muzzle, _mode, _magazine, _ammo, _zeroDistance, _projectileFamily, _speed, _simulationStep, _applyZeroing, _calibrationApplied, _scopeAdjustmentTelemetry, _windTelemetry] call PHEN_CS_fnc_CSS_getAimCacheKey;
     private _cacheReuse = [_aimCacheKey, _aimInputDir, _projectileFamily] call PHEN_CS_fnc_CSS_getReusableAimSolution;
     _cacheReuse params ["_cacheHit", "_cachedSolution", "_aimCacheStatus", "_aimCacheAngleDeg"];
     if (_cacheHit) exitWith {
@@ -2507,7 +3160,7 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         ], true] call PHEN_CS_fnc_CSS_clearAimSolution;
     };
 
-    private _aimFrame = [_unit, _weapon, _speed, _zeroDistance, _gravityCoef, _applyZeroing, _ballisticProfile] call PHEN_CS_fnc_CSS_getAimFrame;
+    private _aimFrame = [_unit, _weapon, _speed, _zeroDistance, _gravityCoef, _applyZeroing, _ballisticProfile, _scopeAdjustmentTelemetry] call PHEN_CS_fnc_CSS_getAimFrame;
     private _preCorrectionAimFrame = +_aimFrame;
     if (_calibrationApplied) then {
         _aimFrame = [_unit, _aimFrame, _calibration, _projectileFamily] call PHEN_CS_fnc_CSS_applyAimCalibration;
@@ -2532,8 +3185,9 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
     private _rayStatus = [_startASL, _rayHit] call PHEN_CS_fnc_CSS_getAimHitStatus;
     private _rayPosASL = if (_rayStatus # 0) then { _rayHit # 0 } else { [] };
 
-    private _hasACEAdvancedBallistics = isClass (configFile >> "CfgPatches" >> "ace_advanced_ballistics");
-    private _label = if (_hasACEAdvancedBallistics) then { "APPROX ACE" } else { "PREDICTED" };
+    private _ballisticsModelForLabel = [_ballisticProfile, "ballisticsModel", "vanilla"] call PHEN_CS_fnc_CSS_getPairValue;
+    private _label = if (_ballisticsModelForLabel isEqualTo "ace_advanced") then { "PIP ACE" } else { "PREDICTED" };
+    if ([_ballisticProfile, _projectileFamily] call PHEN_CS_fnc_CSS_isPIP40mmGLProfile) then { _label = "PIP 40MM"; };
     if (_projectileFamily in ["rocket", "missile"]) then { _label = "APPROX ROCKET"; };
 
     if (!_isSupported) exitWith {
@@ -2585,6 +3239,8 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         case "bullet": { "bullet_trajectory_collision" };
         default { "trajectory_collision" };
     };
+    _windTelemetry = [_startASL] call PHEN_CS_fnc_CSS_getWindTelemetry;
+    _scopeAdjustmentTelemetry = [_unit, _weapon, _muzzle] call PHEN_CS_fnc_CSS_getScopeAdjustmentTelemetry;
 
     _correctionTelemetry = [
         ["calibrationKey", _calibrationKey],
@@ -2599,6 +3255,8 @@ PHEN_CS_fnc_CSS_updateAimPrediction = {
         ["projectileFamily", _projectileFamily],
         ["simulationStep", _simulationStep],
         ["discreteDistance", [_ballisticProfile, "discreteDistance", []] call PHEN_CS_fnc_CSS_getPairValue],
+        ["windTelemetry", _windTelemetry],
+        ["scopeAdjustmentTelemetry", _scopeAdjustmentTelemetry],
         ["zeroingTelemetry", _zeroingTelemetry],
         ["zeroingAngle", [_zeroingTelemetry, "zeroingAngle", 0] call PHEN_CS_fnc_CSS_getPairValue],
         ["preCorrectionAimFrame", _preCorrectionAimFrame],
@@ -2656,14 +3314,7 @@ PHEN_CS_fnc_CSS_getAimDrawASL = {
     params ["_unit", "_impactPosASL"];
 
     if (isNull _unit || { !(_impactPosASL isEqualType []) } || { (count _impactPosASL) < 3 }) exitWith { [] };
-    private _lift = missionNamespace getVariable ["PHEN_CS_CSS_AimDrawSurfaceLift", PHEN_CS_CSS_AimDrawSurfaceLift];
-    private _viewOriginASL = eyePos _unit;
-    private _toCamera = _viewOriginASL vectorDiff _impactPosASL;
-    if ((vectorMagnitude _toCamera) > 0.1) exitWith {
-        _impactPosASL vectorAdd ((vectorNormalized _toCamera) vectorMultiply _lift)
-    };
-
-    _impactPosASL vectorAdd [0, 0, _lift]
+    +_impactPosASL
 };
 
 PHEN_CS_fnc_CSS_draw3D = {
@@ -2709,6 +3360,7 @@ PHEN_CS_fnc_CSS_draw3D = {
         if (_expiresAt > diag_tickTime && { [_unit, _impactPosASL, 5000] call PHEN_CS_fnc_CSS_isAimVisible }) then {
             private _drawASL = [_unit, _impactPosASL] call PHEN_CS_fnc_CSS_getAimDrawASL;
             if (_drawASL isEqualTo []) exitWith {};
+            [_unit, _impactPosASL, _drawASL, _label, _method] call PHEN_CS_fnc_CSS_logAimDrawDebug;
             private _color = if (_method isEqualTo "ballistic") then { [0.2,0.85,1,0.9] } else { [1,0.72,0.1,0.78] };
             drawIcon3D ["\a3\ui_f\data\map\markers\military\destroy_ca.paa", _color, ASLToAGL _drawASL, 0.72 * _hudScale, 0.72 * _hudScale, 0, _label, 1, 0.032 * _hudScale, "RobotoCondensed", "center", false];
         };
