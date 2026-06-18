@@ -49,21 +49,13 @@
 
 Маркер строится до выстрела. Он не читает фактическое место попадания уже выпущенной пули.
 
-Расчет использует:
+Расчет pre-shot точки попадания теперь не использует старый CSS ballistic solver/cache/calibration path. `PHEN_CS_fnc_CSS_updateAimPrediction` делегирует вычисление `PHEN_CS_fnc_CSS_getPIPImpactSolution`, получает готовую ASL-точку и напрямую передает ее в HUD Argus.
 
-- `weaponState` текущего юнита;
-- текущее оружие, muzzle, fire mode и магазин;
-- `currentZeroing [_weapon, _muzzle]`;
-- направление оружия через `weaponDirection`;
-- `initSpeed` из `CfgMagazines`, `CfgWeapons` / muzzle / mode и `CfgAmmo`;
-- `airFriction`, `coefGravity`, `timeToLive`, `simulationStep` и `artilleryLock` из `CfgAmmo`;
-- трассировку траектории через `lineIntersectsSurfaces` по `FIRE` с fallback `GEOM`.
+Для bullet-боеприпасов Argus использует entrypoint мода `Predicted Impact Point indication -EBW`: вызывает `PIP_fnc_updatePath`, берет `PIP_cache_impactLocal` и переводит результат в ASL для кибернетического маркера. При включенном ACE Advanced Ballistics параметры ACE передаются в PIP-путь через `PIP_paramsACE`; PIP EBW сохраняет свой расчет ACE-ветра, ACE scope adjustment, drag, spin drift и coriolis внутри собственного solver-а.
 
-Если Arma уже отдает фактическое направление ствола через `weaponDirection`, Argus не накладывает дополнительную искусственную поправку пристрелки поверх этого направления. Это снижает расхождение метки и убирает дрейф от движения камеры, когда ствол фактически не меняет направление.
+Для поддержанных 40mm HE гранат `1Rnd_HE_Grenade_shell` и `3Rnd_HE_Grenade_shell` используется расчетная траектория из 40mm GL PIP-мода. Для launcher/rocket/missile, pellets и неподдержанных grenade/shell-симуляций Argus не рисует ложную "точную" точку попадания и пишет no-solution причину в debug state.
 
-Argus считает поддерживаемую bullet-баллистику через перенесенную в Cybernetic System расчетную часть Predicted Impact Point. Для поддержанных 40mm HE гранат `1Rnd_HE_Grenade_shell` и `3Rnd_HE_Grenade_shell` используется отдельная траектория из 40mm GL PIP-мода. Для launcher/rocket/missile и неподдержанных grenade/shell-симуляций мод не рисует ложную "точную" точку попадания под игроком или рядом с ним. Если solver не может получить валидную поверхность дальше минимальной безопасной дистанции, решение сбрасывается вместо показа неправильной метки.
-
-При включенном ACE Advanced Ballistics bullet-маркер использует PIP-подход с ACE-ветром, ACE scope adjustment и расчетом drag по скорости пули относительно ветра. В коде не используется внутренний undocumented solver ACE. Argus использует только доступные config-параметры Arma/ACE и перенесенную локальную PIP-логику, не делая вид, что может заранее получить закрытое движковое решение для каждого боеприпаса.
+Старые pre-shot механизмы Cybernetic System `PHEN_CS_fnc_CSS_getReusableAimSolution`, `PHEN_CS_fnc_CSS_storeAimSolutionCache`, `PHEN_CS_fnc_CSS_getShotCalibration`, `PHEN_CS_fnc_CSS_applyAimCalibration`, `PHEN_CS_fnc_CSS_traceBallisticProfile` и CBA setting `PHEN_CS_CSS_UseShotCalibration` удалены из runtime/PBO.
 
 ### Диагностика маркера
 
