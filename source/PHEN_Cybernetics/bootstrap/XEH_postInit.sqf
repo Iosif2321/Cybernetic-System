@@ -28,6 +28,13 @@ PHEN_CS_CSS_ShotSequence = 0;
 PHEN_CS_CSS_LastShotContext = [];
 PHEN_CS_CSS_AimSolutionTTL = 0.75;
 PHEN_CS_CSS_AimDrawSurfaceLift = 0.35;
+PHEN_CS_CSS_PIPUpdateMinInterval = 0.35;
+PHEN_CS_CSS_PIPNoSolutionRetryInterval = 1.25;
+PHEN_CS_CSS_PIPDirDotTolerance = cos 0.2;
+PHEN_CS_CSS_PIPNextUpdateAt = 0;
+PHEN_CS_CSS_PIPLastKey = "";
+PHEN_CS_CSS_PIPLastDir = [0,0,0];
+PHEN_CS_CSS_PIPLastSolution = [];
 PHEN_CS_CSS_FriendContacts = [];
 PHEN_CS_CSS_MineContacts = [];
 PHEN_CS_CSS_RadarContacts = [];
@@ -1353,6 +1360,27 @@ PHEN_CS_fnc_CSS_getPIPImpactSolution = {
         [false, [], "pip_unsupported_projectile", "NO SOLUTION", _zeroDistance, [["weapon", _weapon], ["muzzle", _muzzle], ["magazine", _magazine], ["ammo", _ammo], ["simulation", _simulation]]]
     };
 
+    private _dirForThrottle = _unit weaponDirection _weapon;
+    if !(_dirForThrottle isEqualType [] && { (count _dirForThrottle) >= 3 } && { (vectorMagnitude _dirForThrottle) > 0.001 }) then {
+        _dirForThrottle = [_unit] call PHEN_CS_fnc_CSS_getViewDirection;
+    };
+    _dirForThrottle = vectorNormalized _dirForThrottle;
+    private _pipKey = format ["%1|%2|%3|%4|%5|%6", _weapon, _muzzle, _mode, _magazine, _ammo, round _zeroDistance];
+    private _now = diag_tickTime;
+    private _sameKey = _pipKey isEqualTo PHEN_CS_CSS_PIPLastKey;
+    private _lastDirValid = PHEN_CS_CSS_PIPLastDir isEqualType [] && { (count PHEN_CS_CSS_PIPLastDir) >= 3 } && { (vectorMagnitude PHEN_CS_CSS_PIPLastDir) > 0.001 };
+    private _sameDir = _lastDirValid && { (_dirForThrottle vectorDotProduct PHEN_CS_CSS_PIPLastDir) >= PHEN_CS_CSS_PIPDirDotTolerance };
+    if (_sameKey && { _sameDir } && { _now < PHEN_CS_CSS_PIPNextUpdateAt }) exitWith {
+        if (PHEN_CS_CSS_PIPLastSolution isEqualType [] && { (count PHEN_CS_CSS_PIPLastSolution) >= 6 }) then {
+            +PHEN_CS_CSS_PIPLastSolution
+        } else {
+            [false, [], "pip_retry_backoff", "NO SOLUTION", _zeroDistance, [["weapon", _weapon], ["muzzle", _muzzle], ["magazine", _magazine], ["ammo", _ammo], ["nextUpdateAt", PHEN_CS_CSS_PIPNextUpdateAt]]]
+        }
+    };
+
+    PHEN_CS_CSS_PIPLastKey = _pipKey;
+    PHEN_CS_CSS_PIPLastDir = _dirForThrottle;
+
     if (_isPIP40mm) exitWith {
         private _profile = [
             ["weapon", _weapon],
@@ -1371,9 +1399,14 @@ PHEN_CS_fnc_CSS_getPIPImpactSolution = {
         _trace params ["_hit", "_hitReason", "_traceEndASL", "_traceEndVelocity", "_traceSteps", "_traceTimeOfFlight", "_ignoredHitCount", "_firstIgnoredHit", "_ignoredHitReason"];
         private _impactASL = if !(_hit isEqualTo []) then { _hit # 0 } else { [] };
         if !(_impactASL isEqualType [] && { (count _impactASL) >= 3 }) exitWith {
+            PHEN_CS_CSS_PIPLastSolution = [];
+            PHEN_CS_CSS_PIPNextUpdateAt = diag_tickTime + PHEN_CS_CSS_PIPNoSolutionRetryInterval;
             [false, [], "pip_40mm_no_hit", "PIP 40MM", _zeroDistance, [["weapon", _weapon], ["muzzle", _muzzle], ["magazine", _magazine], ["ammo", _ammo], ["hitReason", _hitReason], ["traceEndASL", _traceEndASL], ["traceSteps", _traceSteps], ["traceTimeOfFlight", _traceTimeOfFlight], ["trajectoryIgnoredHitCount", _ignoredHitCount], ["trajectoryFirstIgnoredHit", _firstIgnoredHit], ["trajectoryIgnoredHitReason", _ignoredHitReason]]]
         };
-        [true, _impactASL, "pip_40mm", "PIP 40MM", _zeroDistance, [["source", "PIPI_EBW_40mm"], ["weapon", _weapon], ["muzzle", _muzzle], ["magazine", _magazine], ["ammo", _ammo], ["hitReason", _hitReason], ["traceEndASL", _traceEndASL], ["traceEndVelocity", _traceEndVelocity], ["traceSteps", _traceSteps], ["traceTimeOfFlight", _traceTimeOfFlight], ["trajectoryIgnoredHitCount", _ignoredHitCount], ["trajectoryFirstIgnoredHit", _firstIgnoredHit], ["trajectoryIgnoredHitReason", _ignoredHitReason]]]
+        private _solution = [true, _impactASL, "pip_40mm", "PIP 40MM", _zeroDistance, [["source", "PIPI_EBW_40mm"], ["weapon", _weapon], ["muzzle", _muzzle], ["magazine", _magazine], ["ammo", _ammo], ["hitReason", _hitReason], ["traceEndASL", _traceEndASL], ["traceEndVelocity", _traceEndVelocity], ["traceSteps", _traceSteps], ["traceTimeOfFlight", _traceTimeOfFlight], ["trajectoryIgnoredHitCount", _ignoredHitCount], ["trajectoryFirstIgnoredHit", _firstIgnoredHit], ["trajectoryIgnoredHitReason", _ignoredHitReason]]];
+        PHEN_CS_CSS_PIPLastSolution = +_solution;
+        PHEN_CS_CSS_PIPNextUpdateAt = diag_tickTime + PHEN_CS_CSS_PIPUpdateMinInterval;
+        _solution
     };
 
     if (!_isBullet) exitWith {
@@ -1381,6 +1414,8 @@ PHEN_CS_fnc_CSS_getPIPImpactSolution = {
     };
 
     if (isNil "PIP_fnc_updatePath" || { isNil "PIP_fnc_proxyP0Dir" } || { isNil "PIP_fnc_refreshProxyCache" } || { !_pipHitAvailable }) exitWith {
+        PHEN_CS_CSS_PIPLastSolution = [];
+        PHEN_CS_CSS_PIPNextUpdateAt = diag_tickTime + PHEN_CS_CSS_PIPNoSolutionRetryInterval;
         [false, [], "pip_ebw_missing", "NO SOLUTION", _zeroDistance, [["required", ["PIP_fnc_updatePath", "PIP_fnc_proxyP0Dir", "PIP_fnc_refreshProxyCache", "PIP_fnc_firstValidHit"]], ["pipACEAvailable", _pipACEAvailable]]]
     };
 
@@ -1491,11 +1526,14 @@ PHEN_CS_fnc_CSS_getPIPImpactSolution = {
             PIP_paramsACE = [_v0ACE max 0.1, _dragModel, _bcs, _vBounds, _atmo, _tempC, _pressHpa, _rh, _twistDir, _stab, _transCoef];
         };
     };
+    if (PIP_useACE_AB && { PIP_paramsACE isEqualTo [] }) then { PIP_useACE_AB = false; };
 
     PIP_cache_valid = false;
     [_unit] call PIP_fnc_updatePath;
 
     if !(missionNamespace getVariable ["PIP_cache_valid", false]) exitWith {
+        PHEN_CS_CSS_PIPLastSolution = [];
+        PHEN_CS_CSS_PIPNextUpdateAt = diag_tickTime + PHEN_CS_CSS_PIPNoSolutionRetryInterval;
         [false, [], "pip_ebw_no_solution", "PIP", _zeroDistance, [["weapon", _weapon], ["muzzle", _muzzle], ["magazine", _magazine], ["ammo", _ammo], ["pipUseACE", PIP_useACE_AB], ["pipParamsACEReady", !(PIP_paramsACE isEqualTo [])]]]
     };
 
@@ -1514,7 +1552,10 @@ PHEN_CS_fnc_CSS_getPIPImpactSolution = {
     private _impactASL = _p0 vectorAdd ((_dir vectorMultiply (_impactLocal # 0)) vectorAdd ((_right vectorMultiply (_impactLocal # 1)) vectorAdd (_up vectorMultiply (_impactLocal # 2))));
     private _method = if (PIP_useACE_AB && { !(PIP_paramsACE isEqualTo []) }) then { "pip_ace" } else { "pip_ebw" };
     private _label = if (_method isEqualTo "pip_ace") then { "PIP ACE" } else { "PIP EBW" };
-    [true, _impactASL, _method, _label, _zeroDistance, [["source", "PIPI_2_EBW"], ["weapon", _weapon], ["muzzle", _muzzle], ["mode", _mode], ["magazine", _magazine], ["ammo", _ammo], ["zeroDistance", _zeroDistance], ["pipUseACE", PIP_useACE_AB], ["pipParams", PIP_params], ["pipParamsACEReady", !(PIP_paramsACE isEqualTo [])], ["pipImpactLocal", _impactLocal], ["pipTOF", missionNamespace getVariable ["PIP_lastTOF", -1]], ["pipHoldMil", missionNamespace getVariable ["PIP_holdMil", 0]], ["pipACEAvailable", _pipACEAvailable], ["pipFirstValidHitAvailable", _pipHitAvailable]]]
+    private _solution = [true, _impactASL, _method, _label, _zeroDistance, [["source", "PIPI_2_EBW"], ["weapon", _weapon], ["muzzle", _muzzle], ["mode", _mode], ["magazine", _magazine], ["ammo", _ammo], ["zeroDistance", _zeroDistance], ["pipUseACE", PIP_useACE_AB], ["pipParams", PIP_params], ["pipParamsACEReady", !(PIP_paramsACE isEqualTo [])], ["pipImpactLocal", _impactLocal], ["pipTOF", missionNamespace getVariable ["PIP_lastTOF", -1]], ["pipHoldMil", missionNamespace getVariable ["PIP_holdMil", 0]], ["pipACEAvailable", _pipACEAvailable], ["pipFirstValidHitAvailable", _pipHitAvailable]]];
+    PHEN_CS_CSS_PIPLastSolution = +_solution;
+    PHEN_CS_CSS_PIPNextUpdateAt = diag_tickTime + PHEN_CS_CSS_PIPUpdateMinInterval;
+    _solution
 };
 
 PHEN_CS_fnc_CSS_updateAimPrediction = {
